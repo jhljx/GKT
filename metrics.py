@@ -19,13 +19,13 @@ class KTLoss(nn.Module):
             pred_answers: the correct probability of questions answered at the next timestamp
             real_answers: the real results(0 or 1) of questions answered at the next timestamp
         Shape:
-            pred_answers: [batch_size, seq_len - 1]
+            pred_answers: [batch_size, seq_len - 1, concept_num]
             real_answers: [batch_size, seq_len]
         Return:
         """
         real_answers = real_answers[:, 1:]  # timestamp=1 ~ T
-        bce_loss = nn.BCELoss()
-        loss = bce_loss(pred_answers, real_answers)
+        nll_loss = nn.NLLLoss(ignore_index=-1)  # ignore masked values in real_answers
+        loss = nll_loss(pred_answers, real_answers)
         return loss
 
 
