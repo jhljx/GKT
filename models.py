@@ -234,31 +234,6 @@ class GKT(nn.Module):
         rel_rec = rel_rec.to(device=masked_qt.device)
         return rel_send, rel_rec
 
-    # Get the prediction probability of questions in the next timestamp
-    def _get_next_pred(self, yt, questions, i, batch_size):
-        r"""
-        Parameters:
-            yt: correct probability of all concepts at the next timestamp
-            questions: question index matrix
-            i: timestamp index
-            batch_size: the size of a student batch
-        Shape:
-            yt: [batch_size, concept_num]
-            questions: [batch_size, seq_len]
-            pred: [batch_size]
-        Return:
-            pred: predicted probability of all concepts at the next timestamp
-        """
-        one_hot_qt = Variable(torch.zeros((batch_size, self.concept_num), device=yt.device))
-        next_qt = questions[:, i + 1]
-        qt_mask = torch.ne(next_qt, -1)  # [batch_size], next_qt != -1
-        mask_num = qt_mask.sum().item()
-        index_tuple = (torch.arange(mask_num), next_qt[qt_mask].long())
-        one_hot_qt[qt_mask] = one_hot_qt[qt_mask].index_put(index_tuple, torch.ones(batch_size))
-        # dot product between yt and one_hot_qt
-        pred = (yt * one_hot_qt).sum(dim=1)  # [batch_size,]
-        return pred
-
     def forward(self, features, questions):
         r"""
         Parameters:
@@ -290,12 +265,11 @@ class GKT(nn.Module):
             h_next, concept_embedding, rec_embedding, z_prob = self._update(tmp_ht, ht, qt, batch_size)
             yt = self._predict(h_next, qt)  # [batch_size, concept_num]
             if i < seq_len - 1:
-                pred = self._get_next_pred(yt, questions, i, batch_size)
-                pred_list.append(pred)
+                pred_list.append(yt)
             ec_list.append(concept_embedding)
             rec_list.append(rec_embedding)
             z_prob_list.append(z_prob)
-        pred_res = torch.stack(pred_list, dim=1)  # [batch_size, seq_len - 1]
+        pred_res = torch.stack(pred_list, dim=1)  # [batch_size, seq_len - 1, concept_num]
         return pred_res, ec_list, rec_list, z_prob_list
 
 
