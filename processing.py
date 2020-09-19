@@ -78,7 +78,7 @@ def load_dataset(file_path, batch_size, graph_type, dkt_graph_path=None, train_r
         seq_len = len(features)
         features += [feature_dim] * (max_seq_len - seq_len)  # to obtain all -1 values in one-hot lookup table
         questions += [-1] * (max_seq_len - seq_len)  # mask_value=-1, important identifiers for GKT model
-        answers += [0] * (max_seq_len - seq_len)  # mask value=0, compatible with the masked values in _predict function of GKT
+        answers += [-1] * (max_seq_len - seq_len)  # mask value=-1, mask values would be omitted in NLLLoss function
 
     feature_idx = torch.tensor(feature_list).long()  # [student_num, max_seq_len]
     feat_one_hot = torch.eye(feature_dim)
