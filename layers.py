@@ -42,7 +42,7 @@ class MLP(nn.Module):
 
     def forward(self, inputs):
         x = F.relu(self.fc1(inputs))
-        x = F.dropout(x, self.dropout_prob, training=self.training)
+        x = F.dropout(x, self.dropout, training=self.training)
         x = F.relu(self.fc2(x))
         return self.batch_norm(x)
 
@@ -55,10 +55,10 @@ class EraseAddGate(nn.Module):
     The paper can be found in https://arxiv.org/abs/1611.08108
     """
 
-    def __init__(self, feature_dim, bias=True):
+    def __init__(self, feature_dim, concept_num, bias=True):
         super(EraseAddGate, self).__init__()
         # weight
-        self.weight = nn.Parameter(torch.rand(feature_dim))
+        self.weight = nn.Parameter(torch.rand(concept_num))
         self.reset_parameters()
         # erase gate
         self.erase = nn.Linear(feature_dim, feature_dim, bias=bias)
@@ -74,8 +74,8 @@ class EraseAddGate(nn.Module):
         Params:
             x: input feature matrix
         Shape:
-            x: [batch_size, feature_dim]
-            res: [batch_size, feature_dim]
+            x: [batch_size, concept_num, feature_dim]
+            res: [batch_size, concept_num, feature_dim]
         Return:
             res: returned feature matrix with old information erased and new information added
         The GKT paper didn't provide detailed explanation about this erase-add gate. As the erase-add gate in the GKT only has one input parameter,

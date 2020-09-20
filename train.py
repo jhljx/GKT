@@ -67,8 +67,9 @@ log = None
 save_dir = args.save_dir
 if args.save_dir:
     exp_counter = 0
-    now = datetime.datetime.now()
-    timestamp = now.isoformat()
+    # now = datetime.datetime.now()
+    # timestamp = now.isoformat()
+    timestamp = int(time.time())
     save_dir = '{}/exp{}/'.format(args.save_dir, timestamp)
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
@@ -99,7 +100,7 @@ vae = VAE(args.emb_dim, args.vae_encoder_dim, args.edge_types, args.vae_decoder_
 graph_model = None  # if args.graph_type in : ['Dense', 'Transition', 'DKT', 'PAM']
 if args.graph_type == 'MHA':
     graph_model = att
-elif args.graph_model == 'VAE':
+elif args.graph_type == 'VAE':
     graph_model = vae
 gkt = GKT(concept_num, args.hid_dim, args.emb_dim, args.edge_types, args.graph_type, graph=graph, graph_model=graph_model,
           dropout=args.dropout, bias=args.bias)

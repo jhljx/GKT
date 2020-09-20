@@ -55,7 +55,7 @@ class GKT(nn.Module):
                 self.f_neighbor_list.append(MLP(2 * mlp_input_dim, mlp_input_dim, mlp_input_dim, dropout=dropout, bias=bias))
 
         # Erase & Add Gate
-        self.erase_add_gate = EraseAddGate(mlp_input_dim, mlp_input_dim)
+        self.erase_add_gate = EraseAddGate(mlp_input_dim, concept_num)
         # Gate Recurrent Unit
         self.gru = nn.GRUCell(mlp_input_dim, hidden_dim, bias=bias)
         # prediction layer
@@ -125,8 +125,8 @@ class GKT(nn.Module):
         rec_embedding, z_prob = None, None
 
         if self.graph_type in ['Dense', 'Transition', 'DKT', 'PAM']:
-            adj = self.graph[masked_qt, :].unsqueeze(dim=-1)  # [mask_num, concept_num, 1]
-            reverse_adj = self.graph[:, masked_qt].transpose(0, 1).unsqueeze(dim=-1)  # [mask_num, concept_num, 1]
+            adj = self.graph[masked_qt.long(), :].unsqueeze(dim=-1)  # [mask_num, concept_num, 1]
+            reverse_adj = self.graph[:, masked_qt.long()].transpose(0, 1).unsqueeze(dim=-1)  # [mask_num, concept_num, 1]
             # self.f_neighbor_list[0](neigh_ht) shape: [mask_num, concept_num, (hidden_dim + embedding_dim)]
             neigh_features = adj * self.f_neighbor_list[0](neigh_ht) + reverse_adj * self.f_neighbor_list[1](neigh_ht)
         else:  # ['MHA', 'VAE']
