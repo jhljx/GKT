@@ -81,10 +81,10 @@ class EraseAddGate(nn.Module):
         The GKT paper didn't provide detailed explanation about this erase-add gate. As the erase-add gate in the GKT only has one input parameter,
         this gate is different with that of the DKVMN. We used the input matrix to build the erase and add gates, rather than $\mathbf{v}_{t}$ vector in the DKVMN.
         """
-        erase_gate = F.sigmoid(self.erase(x))  # [batch_size, feature_dim]
-        # self.weight.unsqueeze(dim=1) shape: [batch_size, 1]
+        erase_gate = F.sigmoid(self.erase(x))  # [batch_size, concept_num, feature_dim]
+        # self.weight.unsqueeze(dim=1) shape: [concept_num, 1]
         tmp_x = x - self.weight.unsqueeze(dim=1) * erase_gate * x
-        add_feat = F.tanh(self.add(x))  # [batch_size, feature_dim]
+        add_feat = F.tanh(self.add(x))  # [batch_size, concept_num, feature_dim]
         res = tmp_x + self.weight.unsqueeze(dim=1) * add_feat
         return res
 
