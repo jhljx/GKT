@@ -27,6 +27,7 @@ class KTLoss(nn.Module):
         # real_answers shape: [batch_size, seq_len - 1]
         # Here we can directly use nn.BCELoss, but this loss doesn't have ignore_index function
         pred_answers = torch.cat(((1.0 - pred_answers).unsqueeze(dim=1), pred_answers.unsqueeze(dim=1)), dim=1)
+        pred_answers = torch.log(pred_answers)
         # pred_answers shape: [batch_size, 2, seq_len - 1]
         nll_loss = nn.NLLLoss(ignore_index=-1)  # ignore masked values in real_answers
         loss = nll_loss(pred_answers, real_answers)
