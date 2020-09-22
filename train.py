@@ -200,6 +200,7 @@ def train(epoch, best_val_loss):
               'time: {:.4f}s'.format(time.time() - t))
     if args.save_dir and np.mean(loss_val) < best_val_loss:
         print('Best model so far, saving...')
+        torch.save(gkt.state_dict(), gkt_file)
         if args.graph_type == 'VAE':
             print('Epoch: {:04d}'.format(epoch),
                   'loss_train: {:.10f}'.format(np.mean(loss_train)),

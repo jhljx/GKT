@@ -202,7 +202,7 @@ class GKT(nn.Module):
         # y = Variable(torch.zeros_like(h_next, device=qt.device))
         y = Variable(torch.zeros(len(qt), self.concept_num))    # [batch_size, concept_num]
         res = self.predict(h_next).squeeze(dim=-1)  # [batch_size, concept_num]
-        y[qt_mask] = F.sigmoid(res[qt_mask])  # [batch_size, concept_num]
+        y[qt_mask] = torch.sigmoid(res[qt_mask])  # [batch_size, concept_num]
         # the masked positions will have probability=0
         return y
 
@@ -224,8 +224,8 @@ class GKT(nn.Module):
         next_qt = questions[:, i + 1]
         qt_mask = torch.ne(next_qt, -1)  # [batch_size], next_qt != -1
         mask_num = qt_mask.sum().item()
-        index_tuple = (torch.arange(mask_num), next_qt[qt_mask])
-        one_hot_qt[qt_mask] = one_hot_qt[qt_mask].index_put(index_tuple, torch.ones(batch_size))
+        index_tuple = (torch.arange(mask_num).long(), next_qt[qt_mask].long())
+        one_hot_qt[qt_mask] = one_hot_qt[qt_mask].index_put(index_tuple, torch.ones(mask_num, device=yt.device))
         # dot product between yt and one_hot_qt
         pred = (yt * one_hot_qt).sum(dim=1)  # [batch_size, ]
         return pred
