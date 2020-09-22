@@ -21,6 +21,7 @@ class MLP(nn.Module):
         self.norm = nn.BatchNorm1d(output_dim)
         # the paper said they added Batch Normalization for the output of MLPs, as shown in Section 4.2
         self.dropout = dropout
+        self.output_dim = output_dim
         self.init_weights()
 
     def init_weights(self):
@@ -33,6 +34,9 @@ class MLP(nn.Module):
                 m.bias.data.zero_()
 
     def batch_norm(self, inputs):
+        if inputs.numel() // self.output_dim == 1 or inputs.numel() == 0:
+            # batch_size == 1 or 0 will cause BatchNorm error, so return the input directly
+            return inputs
         if len(inputs.size()) == 3:
             x = inputs.view(inputs.size(0) * inputs.size(1), -1)
             x = self.norm(x)
