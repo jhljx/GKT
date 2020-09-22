@@ -67,9 +67,9 @@ log = None
 save_dir = args.save_dir
 if args.save_dir:
     exp_counter = 0
-    # now = datetime.datetime.now()
+    now = datetime.datetime.now()
     # timestamp = now.isoformat()
-    timestamp = int(time.time())
+    timestamp = now.strftime('%Y-%m-%d %H:%M:%S')
     save_dir = '{}/exp{}/'.format(args.save_dir, timestamp)
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
