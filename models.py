@@ -202,7 +202,7 @@ class GKT(nn.Module):
         # y = Variable(torch.zeros_like(h_next, device=qt.device))
         y = Variable(torch.zeros(len(qt), self.concept_num))    # [batch_size, concept_num]
         res = self.predict(h_next).squeeze(dim=-1)  # [batch_size, concept_num]
-        y[qt_mask] = F.sigmoid(res[qt_mask])  # [batch_size, concept_num]
+        y[qt_mask] = torch.sigmoid(res[qt_mask])  # [batch_size, concept_num]
         # the masked positions will have probability=0
         return y
 

@@ -27,7 +27,7 @@ class MLP(nn.Module):
     def init_weights(self):
         for m in self.modules():
             if isinstance(m, nn.Linear):
-                nn.init.xavier_normal(m.weight.data)
+                nn.init.xavier_normal_(m.weight.data)
                 m.bias.data.fill_(0.1)
             elif isinstance(m, nn.BatchNorm1d):
                 m.weight.data.fill_(1)
@@ -85,10 +85,10 @@ class EraseAddGate(nn.Module):
         The GKT paper didn't provide detailed explanation about this erase-add gate. As the erase-add gate in the GKT only has one input parameter,
         this gate is different with that of the DKVMN. We used the input matrix to build the erase and add gates, rather than $\mathbf{v}_{t}$ vector in the DKVMN.
         """
-        erase_gate = F.sigmoid(self.erase(x))  # [batch_size, concept_num, feature_dim]
+        erase_gate = torch.sigmoid(self.erase(x))  # [batch_size, concept_num, feature_dim]
         # self.weight.unsqueeze(dim=1) shape: [concept_num, 1]
         tmp_x = x - self.weight.unsqueeze(dim=1) * erase_gate * x
-        add_feat = F.tanh(self.add(x))  # [batch_size, concept_num, feature_dim]
+        add_feat = torch.tanh(self.add(x))  # [batch_size, concept_num, feature_dim]
         res = tmp_x + self.weight.unsqueeze(dim=1) * add_feat
         return res
 
@@ -144,7 +144,7 @@ class MLPEncoder(nn.Module):
     def init_weights(self):
         for m in self.modules():
             if isinstance(m, nn.Linear):
-                nn.init.xavier_normal(m.weight.data)
+                nn.init.xavier_normal_(m.weight.data)
                 m.bias.data.fill_(0.1)
 
     def edge2node(self, x, rel_rec, rel_send):
