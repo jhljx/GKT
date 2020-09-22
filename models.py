@@ -171,11 +171,18 @@ class GKT(nn.Module):
             z_prob: probability distribution of latent variable z in VAE (optional)
         """
         qt_mask = torch.ne(qt, -1)  # [batch_size], qt != -1
+        # GNN Aggregation
         m_next, concept_embedding, rec_embedding, z_prob = self._agg_neighbors(tmp_ht, qt, batch_size)  # [batch_size, concept_num, hidden_dim + embedding_dim]
-        new_m_next = Variable(torch.zeros((batch_size, self.concept_num, self.hidden_dim + self.embedding_dim), device=qt.device))
-        new_m_next[qt_mask] = self.erase_add_gate(m_next[qt_mask])
+        # Erase & Add Gate
+        feature_dim = self.hidden_dim + self.embedding_dim
+        new_m_next = Variable(torch.zeros((batch_size, self.concept_num, feature_dim), device=qt.device))
+        new_m_next[qt_mask] = self.erase_add_gate(m_next[qt_mask])  # [mask_num, concept_num, feature_dim]
+        # GRU
+        mask_num = new_m_next[qt_mask].shape[0]
         h_next = Variable(torch.zeros((batch_size, self.concept_num, self.hidden_dim), device=qt.device))
-        h_next[qt_mask] = self.gru(new_m_next[qt_mask], ht[qt_mask])
+        res = self.gru(new_m_next[qt_mask].reshape(-1, feature_dim), ht[qt_mask])  # [mask_num * concept_num, hidden_num]
+        index_tuple = (torch.arange(mask_num, device=qt_mask.device), )
+        h_next = h_next.index_put(index_tuple, res.reshape(-1, self.concept_num, self.hidden_dim))
         return h_next, concept_embedding, rec_embedding, z_prob
 
     # Predict step, as shown in Section 3.3.3 of the paper
