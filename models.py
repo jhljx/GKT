@@ -180,7 +180,7 @@ class GKT(nn.Module):
         # GRU
         mask_num = new_m_next[qt_mask].shape[0]
         h_next = Variable(torch.zeros((batch_size, self.concept_num, self.hidden_dim), device=qt.device))
-        res = self.gru(new_m_next[qt_mask].reshape(-1, feature_dim), ht[qt_mask])  # [mask_num * concept_num, hidden_num]
+        res = self.gru(new_m_next[qt_mask].reshape(-1, feature_dim), ht[qt_mask].reshape(-1, self.hidden_dim))  # [mask_num * concept_num, hidden_num]
         index_tuple = (torch.arange(mask_num, device=qt_mask.device), )
         h_next = h_next.index_put(index_tuple, res.reshape(-1, self.concept_num, self.hidden_dim))
         return h_next, concept_embedding, rec_embedding, z_prob
