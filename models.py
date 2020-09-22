@@ -196,7 +196,7 @@ class GKT(nn.Module):
             qt: [batch_size]
             y: [batch_size, concept_num]
         Return:
-            y: correct probability of all concepts at the next timestamp
+            y: predicted correct probability of all concepts at the next timestamp
         """
         qt_mask = torch.ne(qt, -1)  # [batch_size], qt != -1
         y = Variable(torch.zeros_like(h_next, device=qt.device))
@@ -205,15 +205,39 @@ class GKT(nn.Module):
         # the masked positions will have probability=0
         return y
 
-    # Get edges for edge inference in MHA and VAE
+    def _get_next_pred(self, yt, questions, i, batch_size):
+        r"""
+        Parameters:
+            y: predicted correct probability of all concepts at the next timestamp
+            questions: question index matrix
+            i: the index of timestamp
+            batch_size: the size of a student batch
+        Shape:
+            y: [batch_size, concept_num]
+            questions: [batch_size, seq_len]
+            pred: [batch_size, ]
+        Return:
+            pred: predicted correct probability of the question answered at the next timestamp
+        """
+        one_hot_qt = torch.zeros((batch_size, self.concept_num))
+        next_qt = questions[:, i + 1]
+        qt_mask = torch.ne(next_qt, -1)  # [batch_size], next_qt != -1
+        mask_num = qt_mask.sum().item()
+        index_tuple = (torch.arange(mask_num), next_qt[qt_mask])
+        one_hot_qt[qt_mask] = one_hot_qt[qt_mask].index_put(index_tuple, torch.ones(batch_size))
+        # dot product between yt and one_hot_qt
+        pred = (yt * one_hot_qt).sum(dim=1)  # [batch_size, ]
+        return pred
+
+    # Get edges for edge inference in VAE
     def _get_edges(self, masked_qt):
         r"""
         Parameters:
             masked_qt: qt index with -1 padding values removed
         Shape:
             masked_qt: [mask_num, ]
-            rel_send:
-            rel_rec:
+            rel_send: [edge_num, concept_num]
+            rel_rec: [edge_num, concept_num]
         Return:
             rel_send: from nodes in edges which send messages to other nodes
             rel_rec:  to nodes in edges which receive messages from other nodes
@@ -272,11 +296,12 @@ class GKT(nn.Module):
             h_next, concept_embedding, rec_embedding, z_prob = self._update(tmp_ht, ht, qt, batch_size)
             yt = self._predict(h_next, qt)  # [batch_size, concept_num]
             if i < seq_len - 1:
-                pred_list.append(yt)
+                pred = self._get_next_pred(yt, questions, i, batch_size)
+                pred_list.append(pred)
             ec_list.append(concept_embedding)
             rec_list.append(rec_embedding)
             z_prob_list.append(z_prob)
-        pred_res = torch.stack(pred_list, dim=1)  # [batch_size, seq_len - 1, concept_num]
+        pred_res = torch.stack(pred_list, dim=1)  # [batch_size, seq_len - 1]
         return pred_res, ec_list, rec_list, z_prob_list
 
 
