@@ -87,7 +87,7 @@ class GKT(nn.Module):
         concept_idx_mat[qt_mask, :] = torch.arange(self.concept_num, device=xt.device)
         concept_embedding = self.emb_c(concept_idx_mat)  # [batch_size, concept_num, embedding_dim]
 
-        index_tuple = (torch.arange(mask_num), qt[qt_mask].long())
+        index_tuple = (torch.arange(mask_num, device=xt.device), qt[qt_mask].long())
         concept_embedding[qt_mask] = concept_embedding[qt_mask].index_put(index_tuple, res_embedding)
         tmp_ht = torch.cat((ht, concept_embedding), dim=-1)  # [batch_size, concept_num, hidden_dim + embedding_dim]
         return tmp_ht
@@ -113,7 +113,7 @@ class GKT(nn.Module):
         masked_tmp_ht = tmp_ht[qt_mask]  # [mask_num, concept_num, hidden_dim + embedding_dim]
         mask_num = masked_tmp_ht.shape[0]
         m_next = Variable(torch.zeros((batch_size, self.concept_num, self.hidden_dim + self.embedding_dim), device=qt.device))
-        self_index_tuple = (torch.arange(mask_num), qt[qt_mask].long())
+        self_index_tuple = (torch.arange(mask_num, device=qt.device), qt[qt_mask].long())
         self_ht = masked_tmp_ht[self_index_tuple]  # [mask_num, hidden_dim + embedding_dim]
         self_features = self.f_self(self_ht)
         expanded_self_ht = self_ht.unsqueeze(dim=1).repeat(1, self.concept_num, 1)  #[mask_num, concept_num, hidden_dim + embedding_dim]
@@ -200,7 +200,7 @@ class GKT(nn.Module):
         """
         qt_mask = torch.ne(qt, -1)  # [batch_size], qt != -1
         # y = Variable(torch.zeros_like(h_next, device=qt.device))
-        y = Variable(torch.zeros(len(qt), self.concept_num))    # [batch_size, concept_num]
+        y = Variable(torch.zeros(len(qt), self.concept_num, device=qt.device))    # [batch_size, concept_num]
         res = self.predict(h_next).squeeze(dim=-1)  # [batch_size, concept_num]
         y[qt_mask] = torch.sigmoid(res[qt_mask])  # [batch_size, concept_num]
         # the masked positions will have probability=0
@@ -220,11 +220,11 @@ class GKT(nn.Module):
         Return:
             pred: predicted correct probability of the question answered at the next timestamp
         """
-        one_hot_qt = torch.zeros((batch_size, self.concept_num))
+        one_hot_qt = torch.zeros((batch_size, self.concept_num), device=yt.device)
         next_qt = questions[:, i + 1]
         qt_mask = torch.ne(next_qt, -1)  # [batch_size], next_qt != -1
         mask_num = qt_mask.sum().item()
-        index_tuple = (torch.arange(mask_num).long(), next_qt[qt_mask].long())
+        index_tuple = (torch.arange(mask_num, device=yt.device).long(), next_qt[qt_mask].long())
         one_hot_qt[qt_mask] = one_hot_qt[qt_mask].index_put(index_tuple, torch.ones(mask_num, device=yt.device))
         # dot product between yt and one_hot_qt
         pred = (yt * one_hot_qt).sum(dim=1)  # [batch_size, ]
