@@ -19,11 +19,15 @@ class KTLoss(nn.Module):
             pred_answers: the correct probability of questions answered at the next timestamp
             real_answers: the real results(0 or 1) of questions answered at the next timestamp
         Shape:
-            pred_answers: [batch_size, seq_len - 1, concept_num]
+            pred_answers: [batch_size, seq_len - 1]
             real_answers: [batch_size, seq_len]
         Return:
         """
         real_answers = real_answers[:, 1:]  # timestamp=1 ~ T
+        # real_answers shape: [batch_size, seq_len - 1]
+        # Here we can directly use nn.BCELoss, but this loss doesn't have ignore_index function
+        pred_answers = torch.cat(((1.0 - pred_answers).unsqueeze(dim=1), pred_answers.unsqueeze(dim=1)), dim=1)
+        # pred_answers shape: [batch_size, 2, seq_len - 1]
         nll_loss = nn.NLLLoss(ignore_index=-1)  # ignore masked values in real_answers
         loss = nll_loss(pred_answers, real_answers)
         return loss
