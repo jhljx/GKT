@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 from layers import MLP, EraseAddGate, MLPEncoder, MLPDecoder, ScaledDotProductAttention
-from utils import gumbel_softmax, my_softmax
+from utils import gumbel_softmax
 
 # Graph-based Knowledge Tracing: Modeling Student Proficiency Using Graph Neural Network.
 # For more information, please refer to https://dl.acm.org/doi/10.1145/3350546.3352513
@@ -324,14 +324,13 @@ class MultiHeadAttention(nn.Module):
     def __init__(self, n_head, concept_num, input_dim, d_k, dropout=0.):
         super(MultiHeadAttention, self).__init__()
         self.n_head = n_head
+        self.concept_num = concept_num
         self.d_k = d_k
         self.w_qs = nn.Linear(input_dim, n_head * d_k, bias=False)
         self.w_ks = nn.Linear(input_dim, n_head * d_k, bias=False)
         self.attention = ScaledDotProductAttention(temperature=d_k ** 0.5, attn_dropout=dropout)
         # inferred latent graph
-        self.graphs = nn.ParameterList()
-        for k in range(n_head):
-            self.graphs.append(nn.Parameter(torch.zeros(concept_num, concept_num)))
+        self.graphs = Variable(torch.zeros(n_head, concept_num, concept_num))
 
     def _get_graph(self, attn_score, qt):
         r"""
@@ -344,10 +343,12 @@ class MultiHeadAttention(nn.Module):
         Return:
             graphs: n_head types of inferred graphs
         """
+        graphs = Variable(torch.zeros(self.n_head, self.concept_num, self.concept_num))
         for k in range(self.n_head):
             index_tuple = (qt.long(), )
+            graphs[k] = graphs[k].index_put(index_tuple, attn_score[k])
             self.graphs[k] = self.graphs[k].index_put(index_tuple, attn_score[k])
-        return self.graphs
+        return graphs
 
     def forward(self, qt, query, key, mask=None):
         r"""
@@ -382,16 +383,16 @@ class MultiHeadAttention(nn.Module):
 
 class VAE(nn.Module):
 
-    def __init__(self, input_dim, hidden_dim, output_dim, msg_hidden_dim, msg_output_dim, edge_type_num=2, tau=0.1, factor=True, dropout=0., bias=True):
+    def __init__(self, input_dim, hidden_dim, output_dim, msg_hidden_dim, msg_output_dim, concept_num, edge_type_num=2,
+                 tau=0.1, factor=True, dropout=0., bias=True):
         super(VAE, self).__init__()
         self.edge_type_num = edge_type_num
+        self.concept_num = concept_num
         self.tau = tau
         self.encoder = MLPEncoder(input_dim, hidden_dim, output_dim, factor=factor, dropout=dropout, bias=bias)
         self.decoder = MLPDecoder(input_dim, msg_hidden_dim, msg_output_dim, hidden_dim, edge_type_num, dropout=dropout, bias=bias)
         # inferred latent graph
-        self.graphs = nn.ParameterList()
-        for k in range(edge_type_num):
-            self.graphs.append(nn.Parameter(torch.zeros(input_dim, input_dim)))
+        self.graphs = torch.zeros(edge_type_num, concept_num, concept_num)
 
     def _get_graph(self, edges, rel_rec, rel_send):
         r"""
@@ -406,13 +407,14 @@ class VAE(nn.Module):
         Return:
             graphs: latent graph list modeled by z which has different edge types
         """
-        edge_type_num = edges.shape[2]
         x_index = torch.where(rel_send)[1].long()  # send node index: [edge_num, ]
         y_index = torch.where(rel_rec)[1].long()   # receive node index [edge_num, ]
-        for k in range(edge_type_num):
+        graphs = Variable(torch.zeros(self.edge_type_num, self.concept_num, self.concept_num))
+        for k in range(self.edge_type_num):
             index_tuple = (x_index, y_index)
+            graphs[k] = graphs[k].index_put(index_tuple, edges[:, k])
             self.graphs[k] = self.graphs[k].index_put(index_tuple, edges[:, k])
-        return self.graphs
+        return graphs
 
     def forward(self, data, rel_send, rel_rec):
         r"""
@@ -429,9 +431,9 @@ class VAE(nn.Module):
             output: the reconstructed data
             prob: q(z|x) distribution
         """
-        logits = self.encoder(data, rel_rec, rel_send)
-        edges = gumbel_softmax(logits, tau=self.tau)  # [edge_num, edge_type_num]
-        prob = my_softmax(logits, -1)
-        output = self.decoder(data, edges, rel_rec, rel_send)
+        logits = self.encoder(data, rel_rec, rel_send)  # [edge_num, output_dim(edge_type_num)]
+        edges = gumbel_softmax(logits, tau=self.tau, dim=-1)  # [edge_num, edge_type_num]
+        prob = F.softmax(logits, dim=-1)
+        output = self.decoder(data, edges, rel_rec, rel_send)  # [concept_num, embedding_dim]
         graphs = self._get_graph(edges, rel_rec, rel_send)
         return graphs, output, prob
