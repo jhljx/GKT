@@ -134,10 +134,8 @@ class MLPEncoder(nn.Module):
         self.mlp2 = MLP(hidden_dim, hidden_dim, hidden_dim, dropout=dropout, bias=bias)
         if self.factor:
             self.mlp3 = MLP(hidden_dim * 3, hidden_dim, hidden_dim, dropout=dropout, bias=bias)
-            print("Using factor graph MLP encoder.")
         else:
             self.mlp3 = MLP(hidden_dim * 2, hidden_dim, hidden_dim, dropout=dropout, bias=bias)
-            print("Using MLP encoder.")
         self.fc_out = nn.Linear(hidden_dim, output_dim)
         self.init_weights()
 
@@ -207,7 +205,6 @@ class MLPDecoder(nn.Module):
         self.out_fc1 = nn.Linear(msg_output_dim, hidden_dim, bias=bias)
         self.out_fc2 = nn.Linear(hidden_dim, hidden_dim, bias=bias)
         self.out_fc3 = nn.Linear(hidden_dim, input_dim, bias=bias)
-        print('Using learned interaction net decoder.')
 
     def forward(self, inputs, rel_type, rel_rec, rel_send):
         r"""
