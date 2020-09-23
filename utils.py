@@ -93,8 +93,10 @@ def kl_categorical_uniform(preds, concept_num, num_edge_types, add_const=False, 
 
 
 def nll_gaussian(preds, target, variance, add_const=False):
+    # pred: [concept_num, embedding_dim]
+    # target: [concept_num, embedding_dim]
     neg_log_p = ((preds - target) ** 2 / (2 * variance))
     if add_const:
         const = 0.5 * np.log(2 * np.pi * variance)
         neg_log_p += const
-    return neg_log_p.sum() / (target.size(0) * target.size(1))
+    return neg_log_p.mean()
