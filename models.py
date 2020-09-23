@@ -330,7 +330,7 @@ class MultiHeadAttention(nn.Module):
         self.w_ks = nn.Linear(input_dim, n_head * d_k, bias=False)
         self.attention = ScaledDotProductAttention(temperature=d_k ** 0.5, attn_dropout=dropout)
         # inferred latent graph
-        self.graphs = Variable(torch.zeros(n_head, concept_num, concept_num))
+        self.graphs = torch.zeros(n_head, concept_num, concept_num)
 
     def _get_graph(self, attn_score, qt):
         r"""
