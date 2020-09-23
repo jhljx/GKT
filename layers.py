@@ -164,27 +164,27 @@ class MLPEncoder(nn.Module):
             rel_send: one-hot encoded send-node index
             rel_rec: one-hot encoded receive-node index
         Shape:
-            data: [concept_num, embedding_dim]
+            inputs: [concept_num, embedding_dim]
             rel_send: [edge_num, concept_num]
             rel_rec: [edge_num, concept_num]
         Return:
             output: [edge_num, edge_type_num]
         """
-        x = self.node2edge(inputs, rel_rec, rel_send)
-        x = self.mlp(x)
+        x = self.node2edge(inputs, rel_rec, rel_send)  # [edge_num, 2 * embedding_dim]
+        x = self.mlp(x)  # [edge_num, hidden_num]
         x_skip = x
 
         if self.factor:
-            x = self.edge2node(x, rel_rec, rel_send)
-            x = self.mlp2(x)
-            x = self.node2edge(x, rel_rec, rel_send)
-            x = torch.cat((x, x_skip), dim=2)  # Skip connection
-            x = self.mlp3(x)
+            x = self.edge2node(x, rel_rec, rel_send)  # [concept_num, hidden_num]
+            x = self.mlp2(x)  # [concept_num, hidden_num]
+            x = self.node2edge(x, rel_rec, rel_send)  # [edge_num, 2 * hidden_num]
+            x = torch.cat((x, x_skip), dim=1)  # Skip connection  shape: [edge_num, 3 * hidden_num]
+            x = self.mlp3(x)  # [edge_num, hidden_num]
         else:
-            x = self.mlp2(x)
-            x = torch.cat((x, x_skip), dim=2)  # Skip connection
-            x = self.mlp3(x)
-        output = self.fc_out(x)
+            x = self.mlp2(x)  # [edge_num, hidden_num]
+            x = torch.cat((x, x_skip), dim=1)  # Skip connection  shape: [edge_num, 2 * hidden_num]
+            x = self.mlp3(x)  # [edge_num, hidden_num]
+        output = self.fc_out(x)  # [edge_num, output_dim]
         return output
 
 
@@ -224,7 +224,7 @@ class MLPDecoder(nn.Module):
         # Node2edge
         receivers = torch.matmul(rel_rec, inputs)  # [edge_num, embedding_dim]
         senders = torch.matmul(rel_send, inputs)  # [edge_num, embedding_dim]
-        pre_msg = torch.cat([senders, receivers], dim=-1)
+        pre_msg = torch.cat([senders, receivers], dim=-1)  # [edge_num, 2 * embedding_dim]
 
         all_msgs = Variable(torch.zeros(pre_msg.size(0), self.msg_out_dim, device=inputs.device))  # [edge_num, msg_out_dim]
         for i in range(self.edge_type_num):
@@ -239,7 +239,7 @@ class MLPDecoder(nn.Module):
         agg_msgs = agg_msgs.contiguous()
 
         # Output MLP
-        pred = F.dropout(F.relu(self.out_fc1(agg_msgs)), p=self.dropout)
-        pred = F.dropout(F.relu(self.out_fc2(pred)), p=self.dropout)
+        pred = F.dropout(F.relu(self.out_fc1(agg_msgs)), p=self.dropout)  # [concept_num, hidden_dim]
+        pred = F.dropout(F.relu(self.out_fc2(pred)), p=self.dropout)  # [concept_num, hidden_dim]
         pred = self.out_fc3(pred)  # [concept_num, embedding_dim]
         return pred
