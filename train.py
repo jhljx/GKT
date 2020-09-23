@@ -28,11 +28,11 @@ parser.add_argument('-graph-save-dir', type=str, default='graphs', help='Dir for
 parser.add_argument('--load-dir', type=str, default='', help='Where to load the trained model if finetunning. ' + 'Leave empty to train from scratch')
 parser.add_argument('--dkt-graph-dir', type=str, default='dkt-graph', help='Where to load the pretrained dkt graph.')
 parser.add_argument('--dkt-graph', type=str, default='dkt_graph.txt', help='DKT graph data file name.')
-parser.add_argument('--hid-dim', type=int, default=256, help='Dimension of hidden knowledge states.')
-parser.add_argument('--emb-dim', type=int, default=256, help='Dimension of concept embedding.')
-parser.add_argument('--attn-dim', type=int, default=128, help='Dimension of multi-head attention layers.')
-parser.add_argument('--vae-encoder-dim', type=int, default=128, help='Dimension of hidden layers in vae encoder.')
-parser.add_argument('--vae-decoder-dim', type=int, default=128, help='Dimension of hidden layers in vae decoder.')
+parser.add_argument('--hid-dim', type=int, default=128, help='Dimension of hidden knowledge states.')
+parser.add_argument('--emb-dim', type=int, default=64, help='Dimension of concept embedding.')
+parser.add_argument('--attn-dim', type=int, default=64, help='Dimension of multi-head attention layers.')
+parser.add_argument('--vae-encoder-dim', type=int, default=64, help='Dimension of hidden layers in vae encoder.')
+parser.add_argument('--vae-decoder-dim', type=int, default=64, help='Dimension of hidden layers in vae decoder.')
 parser.add_argument('--edge-types', type=int, default=2, help='The number of edge types to infer.')
 parser.add_argument('--graph-type', type=str, default='Dense', help='The type of latent concept graph.')
 parser.add_argument('--dropout', type=float, default=0.5, help='Dropout rate (1 - keep probability).')
@@ -43,7 +43,7 @@ parser.add_argument('--no-factor', action='store_true', default=False, help='Dis
 parser.add_argument('--prior', action='store_true', default=False, help='Whether to use sparsity prior.')
 parser.add_argument('--var', type=float, default=5e-5, help='Output variance.')
 parser.add_argument('--epochs', type=int, default=500, help='Number of epochs to train.')
-parser.add_argument('--batch-size', type=int, default=128, help='Number of samples per batch.')
+parser.add_argument('--batch-size', type=int, default=16, help='Number of samples per batch.')
 parser.add_argument('--train-ratio', type=float, default=0.7, help='The ratio of training samples in a dataset.')
 parser.add_argument('--val-ratio', type=float, default=0.2, help='The ratio of validation samples in a dataset.')
 parser.add_argument('--shuffle', type=bool, default=True, help='Whether to shuffle the dataset or not.')
@@ -92,21 +92,22 @@ concept_num, graph, train_loader, valid_loader, test_loader = load_dataset(datas
                                                                            val_ratio=args.val_ratio,
                                                                            shuffle=args.shuffle, use_cuda=args.cuda)
 
-# build model
-att = MultiHeadAttention(args.edge_types, concept_num, args.emb_dim, args.attn_dim, dropout=args.dropout)
-vae = VAE(args.emb_dim, args.vae_encoder_dim, args.edge_types, args.vae_decoder_dim, args.vae_decoder_dim,
-          edge_type_num=args.edge_types, tau=args.temp, factor=args.factor, dropout=args.dropout, bias=args.bias)
 
+# build models
 graph_model = None  # if args.graph_type in : ['Dense', 'Transition', 'DKT', 'PAM']
 if args.graph_type == 'MHA':
-    graph_model = att
+    graph_model = MultiHeadAttention(args.edge_types, concept_num, args.emb_dim, args.attn_dim, dropout=args.dropout)
 elif args.graph_type == 'VAE':
-    graph_model = vae
+    graph_model = VAE(args.emb_dim, args.vae_encoder_dim, args.edge_types, args.vae_decoder_dim, args.vae_decoder_dim,
+                      edge_type_num=args.edge_types, tau=args.temp, factor=args.factor, dropout=args.dropout, bias=args.bias)
+    vae_loss = VAELoss(concept_num, edge_type_num=args.edge_types, prior=args.prior)
+    if args.cuda:
+        vae_loss = vae_loss.cuda()
 gkt = GKT(concept_num, args.hid_dim, args.emb_dim, args.edge_types, args.graph_type, graph=graph, graph_model=graph_model,
           dropout=args.dropout, bias=args.bias)
 
 kt_loss = KTLoss()
-vae_loss = VAELoss(concept_num, edge_type_num=args.edge_types, prior=args.prior)
+
 
 if args.load_dir:
     gkt_file = os.path.join(args.load_dir, 'gkt.pt')
@@ -130,11 +131,6 @@ if args.prior:
         log_prior = log_prior.cuda()
 
 if args.cuda:
-    if args.graph_type == 'MHA':
-        att = att.cuda()
-    if args.graph_type == 'VAE':
-        vae = vae.cuda()
-        vae_loss = vae_loss.cuda()
     gkt = gkt.cuda()
     kt_loss = KTLoss()
 
@@ -144,13 +140,12 @@ def train(epoch, best_val_loss):
     loss_train = []
     kt_train = []
     vae_train = []
-
     gkt.train()
-    scheduler.step()
     for batch_idx, (features, questions, answers) in enumerate(train_loader):
         if args.cuda:
             features, questions, answers = features.cuda(), questions.cuda(), answers.cuda()
         optimizer.zero_grad()
+        questions = questions.long()
         pred_res, ec_list, rec_list, z_prob_list = gkt(features, questions)
         loss_kt = kt_loss(pred_res, answers)
         kt_train.append(loss_kt.item())
@@ -162,9 +157,11 @@ def train(epoch, best_val_loss):
                 loss_vae = vae_loss(ec_list, rec_list, z_prob_list)
                 vae_train.append(loss_vae.item())
             loss = loss + loss_vae
+        print('batch idx: ', batch_idx, 'loss: ', loss.item())
         loss_train.append(loss.item())
         loss.backward()
         optimizer.step()
+        scheduler.step()
 
     loss_val = []
     kt_val = []
@@ -174,6 +171,7 @@ def train(epoch, best_val_loss):
     for batch_idx, (features, questions, answers) in enumerate(valid_loader):
         if args.cuda:
             features, questions, answers = features.cuda(), questions.cuda(), answers.cuda()
+        questions = questions.long()
         pred_res, ec_list, rec_list, z_prob_list = gkt(features, questions)
         loss_kt = kt_loss(pred_res, answers)
         kt_val.append(loss_kt.item())
@@ -229,6 +227,7 @@ def test():
     for batch_idx, (features, questions, answers) in enumerate(test_loader):
         if args.cuda:
             features, questions, answers = features.cuda(), questions.cuda(), answers.cuda()
+        questions = questions.long()
         pred_res, ec_list, rec_list, z_prob_list = gkt(features, questions)
         loss_kt = kt_loss(pred_res, answers)
         kt_test.append(loss_kt.item())
@@ -262,6 +261,7 @@ def test():
 
 
 # Train model
+print('start training!')
 t_total = time.time()
 best_val_loss = np.inf
 best_epoch = 0
