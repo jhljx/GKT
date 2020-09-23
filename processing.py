@@ -105,22 +105,6 @@ def load_dataset(file_path, batch_size, graph_type, dkt_graph_path=None, train_r
     concept_num = question_dim
     assert feature_dim == 2 * question_dim
 
-    # for i in range(student_num):
-    #     features = feature_list[i]
-    #     questions = question_list[i]
-    #     answers = answer_list[i]
-    #     seq_len = len(features)
-    #     features += [feature_dim] * (max_seq_len - seq_len)  # to obtain all -1 values in one-hot lookup table
-    #     questions += [-1] * (max_seq_len - seq_len)  # mask_value=-1, important identifiers for GKT model
-    #     answers += [-1] * (max_seq_len - seq_len)  # mask value=-1, mask values would be omitted in NLLLoss function
-
-    # feature_idx = torch.tensor(feature_list).long()  # [student_num, max_seq_len]
-    #feat_one_hot = torch.eye(feature_dim)
-    # feat_one_hot = torch.cat((feat_one_hot, -1 * torch.ones(1, feature_dim)), dim=0)
-    # features = F.embedding(feature_idx, feat_one_hot)
-    #questions = torch.tensor(question_list).float()
-    # answers = torch.tensor(answer_list).float()
-
     kt_dataset = KTDataset(feature_list, question_list, answer_list)
     train_size = int(train_ratio * student_num)
     val_size = int(val_ratio * student_num)
