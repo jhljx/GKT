@@ -112,7 +112,7 @@ class GKT(nn.Module):
         qt_mask = torch.ne(qt, -1)  # [batch_size], qt != -1
         masked_tmp_ht = tmp_ht[qt_mask]  # [mask_num, concept_num, hidden_dim + embedding_dim]
         mask_num = masked_tmp_ht.shape[0]
-        m_next = Variable(torch.zeros((batch_size, self.concept_num, self.hidden_dim + self.embedding_dim), device=qt.device))
+        # m_next = Variable(torch.zeros((batch_size, self.concept_num, self.hidden_dim + self.embedding_dim), device=qt.device))
         self_index_tuple = (torch.arange(mask_num, device=qt.device), qt[qt_mask].long())
         self_ht = masked_tmp_ht[self_index_tuple]  # [mask_num, hidden_dim + embedding_dim]
         self_features = self.f_self(self_ht)
@@ -147,6 +147,8 @@ class GKT(nn.Module):
             if self.graph_type == 'MHA':
                 neigh_features = 1. / self.edge_type_num * neigh_features
         # neigh_features: [mask_num, concept_num, hidden_dim + embedding_dim]
+        m_next = tmp_ht
+        m_next[~qt_mask] = 0.
         m_next[qt_mask] = neigh_features
         m_next[qt_mask] = m_next[qt_mask].index_put(self_index_tuple, self_features)
         return m_next, concept_embedding, rec_embedding, z_prob
@@ -171,16 +173,17 @@ class GKT(nn.Module):
             z_prob: probability distribution of latent variable z in VAE (optional)
         """
         qt_mask = torch.ne(qt, -1)  # [batch_size], qt != -1
+        mask_num = qt_mask.nonzero().shape[0]
         # GNN Aggregation
         m_next, concept_embedding, rec_embedding, z_prob = self._agg_neighbors(tmp_ht, qt, batch_size)  # [batch_size, concept_num, hidden_dim + embedding_dim]
         # Erase & Add Gate
         feature_dim = self.hidden_dim + self.embedding_dim
-        new_m_next = Variable(torch.zeros((batch_size, self.concept_num, feature_dim), device=qt.device))
-        new_m_next[qt_mask] = self.erase_add_gate(m_next[qt_mask])  # [mask_num, concept_num, feature_dim]
+        # new_m_next = Variable(torch.zeros((batch_size, self.concept_num, feature_dim), device=qt.device))
+        m_next[qt_mask] = self.erase_add_gate(m_next[qt_mask])  # [mask_num, concept_num, feature_dim]
         # GRU
-        mask_num = new_m_next[qt_mask].shape[0]
-        h_next = Variable(torch.zeros((batch_size, self.concept_num, self.hidden_dim), device=qt.device))
-        res = self.gru(new_m_next[qt_mask].reshape(-1, feature_dim), ht[qt_mask].reshape(-1, self.hidden_dim))  # [mask_num * concept_num, hidden_num]
+        # h_next = Variable(torch.zeros((batch_size, self.concept_num, self.hidden_dim), device=qt.device))
+        h_next = m_next[:, :, :self.hidden_dim]
+        res = self.gru(m_next[qt_mask].reshape(-1, feature_dim), ht[qt_mask].reshape(-1, self.hidden_dim))  # [mask_num * concept_num, hidden_num]
         index_tuple = (torch.arange(mask_num, device=qt_mask.device), )
         h_next = h_next.index_put(index_tuple, res.reshape(-1, self.concept_num, self.hidden_dim))
         return h_next, concept_embedding, rec_embedding, z_prob
@@ -200,9 +203,10 @@ class GKT(nn.Module):
         """
         qt_mask = torch.ne(qt, -1)  # [batch_size], qt != -1
         # y = Variable(torch.zeros_like(h_next, device=qt.device))
-        y = Variable(torch.zeros(len(qt), self.concept_num, device=qt.device))    # [batch_size, concept_num]
-        res = self.predict(h_next).squeeze(dim=-1)  # [batch_size, concept_num]
-        y[qt_mask] = torch.sigmoid(res[qt_mask])  # [batch_size, concept_num]
+        # y = Variable(torch.zeros(len(qt), self.concept_num, device=qt.device))    # [batch_size, concept_num]
+        y = self.predict(h_next).squeeze(dim=-1)  # [batch_size, concept_num]
+        y[~qt_mask] = 0.
+        y[qt_mask] = torch.sigmoid(y[qt_mask])  # [batch_size, concept_num]
         # the masked positions will have probability=0
         return y
 
@@ -273,7 +277,7 @@ class GKT(nn.Module):
             questions: question index matrix
         seq_len dimension needs padding, because different students may have learning sequences with different lengths.
         Shape:
-            features: [batch_size, seq_len, 2 * concept_num]
+            features: [batch_size, seq_len]
             questions: [batch_size, seq_len]
             pred_res: [batch_size, seq_len - 1]
         Return:
@@ -282,10 +286,15 @@ class GKT(nn.Module):
             rec_embedding: reconstructed input of VAE (optional)
             z_prob: probability distribution of latent variable z in VAE (optional)
         """
-        batch_size, seq_len, feature_dim = features.shape
-        assert feature_dim == 2 * self.concept_num
-        ht = Variable(torch.zeros((batch_size, self.concept_num, self.hidden_dim), device=features.device))
+        batch_size, seq_len = features.shape
+        # feature_idx = torch.tensor(feature_list).long()  # [student_num, max_seq_len]
+        feature_dim = 2 * self.concept_num
+        features[features == -1] = feature_dim
+        feat_one_hot = torch.eye(feature_dim)
+        feat_one_hot = torch.cat((feat_one_hot, -1 * torch.ones(1, feature_dim)), dim=0)
+        features = F.embedding(features, feat_one_hot)
 
+        ht = Variable(torch.zeros((batch_size, self.concept_num, self.hidden_dim), device=features.device))
         pred_list = []
         ec_list = []  # concept embedding list in VAE
         rec_list = []  # reconstructed embedding list in VAE
