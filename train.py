@@ -41,9 +41,9 @@ parser.add_argument('--temp', type=float, default=0.5, help='Temperature for Gum
 parser.add_argument('--hard', action='store_true', default=False, help='Uses discrete samples in training forward pass.')
 parser.add_argument('--no-factor', action='store_true', default=False, help='Disables factor graph model.')
 parser.add_argument('--prior', action='store_true', default=False, help='Whether to use sparsity prior.')
-parser.add_argument('--var', type=float, default=5e-5, help='Output variance.')
+parser.add_argument('--var', type=float, default=1, help='Output variance.')
 parser.add_argument('--epochs', type=int, default=500, help='Number of epochs to train.')
-parser.add_argument('--batch-size', type=int, default=16, help='Number of samples per batch.')
+parser.add_argument('--batch-size', type=int, default=1, help='Number of samples per batch.')
 parser.add_argument('--train-ratio', type=float, default=0.7, help='The ratio of training samples in a dataset.')
 parser.add_argument('--val-ratio', type=float, default=0.2, help='The ratio of validation samples in a dataset.')
 parser.add_argument('--shuffle', type=bool, default=True, help='Whether to shuffle the dataset or not.')
@@ -98,9 +98,9 @@ graph_model = None  # if args.graph_type in : ['Dense', 'Transition', 'DKT', 'PA
 if args.graph_type == 'MHA':
     graph_model = MultiHeadAttention(args.edge_types, concept_num, args.emb_dim, args.attn_dim, dropout=args.dropout)
 elif args.graph_type == 'VAE':
-    graph_model = VAE(args.emb_dim, args.vae_encoder_dim, args.edge_types, args.vae_decoder_dim, args.vae_decoder_dim,
+    graph_model = VAE(args.emb_dim, args.vae_encoder_dim, args.edge_types, args.vae_decoder_dim, args.vae_decoder_dim, concept_num,
                       edge_type_num=args.edge_types, tau=args.temp, factor=args.factor, dropout=args.dropout, bias=args.bias)
-    vae_loss = VAELoss(concept_num, edge_type_num=args.edge_types, prior=args.prior)
+    vae_loss = VAELoss(concept_num, edge_type_num=args.edge_types, prior=args.prior, var=args.var)
     if args.cuda:
         vae_loss = vae_loss.cuda()
 gkt = GKT(concept_num, args.hid_dim, args.emb_dim, args.edge_types, args.graph_type, graph=graph, graph_model=graph_model,
@@ -149,15 +149,18 @@ def train(epoch, best_val_loss):
         pred_res, ec_list, rec_list, z_prob_list = gkt(features, questions)
         loss_kt = kt_loss(pred_res, answers)
         kt_train.append(loss_kt.item())
-        loss = loss_kt
+
         if args.graph_type == 'VAE':
             if args.prior:
                 loss_vae = vae_loss(ec_list, rec_list, z_prob_list, log_prior=log_prior)
             else:
                 loss_vae = vae_loss(ec_list, rec_list, z_prob_list)
                 vae_train.append(loss_vae.item())
-            loss = loss + loss_vae
-        print('batch idx: ', batch_idx, 'loss: ', loss.item())
+            print('batch idx: ', batch_idx, 'loss kt: ', loss_kt.item(), 'loss vae: ', loss_vae.item())
+            loss = loss_kt + loss_vae
+        else:
+            loss = loss_kt
+            print('batch idx: ', batch_idx, 'loss kt: ', loss_kt.item())
         loss_train.append(loss.item())
         loss.backward()
         optimizer.step()
@@ -179,7 +182,7 @@ def train(epoch, best_val_loss):
         if args.graph_type == 'VAE':
             loss_vae = vae_loss(ec_list, rec_list, z_prob_list)
             vae_val.append(loss_vae.item())
-            loss = loss + loss_vae
+            loss = loss_kt + loss_vae
         loss_val.append(loss.item())
 
     if args.graph_type == 'VAE':
@@ -235,7 +238,7 @@ def test():
         if args.graph_type == 'VAE':
             loss_vae = vae_loss(ec_list, rec_list, z_prob_list)
             vae_test.append(loss_vae.item())
-            loss = loss + loss_vae
+            loss = loss_kt + loss_vae
         loss_test.append(loss.item())
 
     print('--------------------------------')
