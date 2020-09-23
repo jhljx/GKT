@@ -27,13 +27,7 @@ def sample_gumbel(shape, eps=1e-10):
     return - torch.log(eps - torch.log(U + eps))
 
 
-def my_softmax(input, axis=1):
-    trans_input = input.transpose(axis, 0).contiguous()
-    soft_max_1d = F.softmax(trans_input)
-    return soft_max_1d.transpose(axis, 0)
-
-
-def gumbel_softmax_sample(logits, tau=1, eps=1e-10):
+def gumbel_softmax_sample(logits, tau=1, eps=1e-10, dim=-1):
     """
     NOTE: Stolen from https://github.com/ethanfetaya/NRI/blob/master/utils.py
     Draw a sample from the Gumbel-Softmax distribution
@@ -44,10 +38,10 @@ def gumbel_softmax_sample(logits, tau=1, eps=1e-10):
     if logits.is_cuda:
         gumbel_noise = gumbel_noise.cuda()
     y = logits + Variable(gumbel_noise)
-    return my_softmax(y / tau, axis=-1)
+    return F.softmax(y / tau, dim=dim)
 
 
-def gumbel_softmax(logits, tau=1, hard=False, eps=1e-10):
+def gumbel_softmax(logits, tau=1, hard=False, eps=1e-10, dim=-1):
     """
     NOTE: Stolen from https://github.com/ethanfetaya/NRI/blob/master/utils.py
     Sample from the Gumbel-Softmax distribution and optionally discretize.
@@ -64,7 +58,7 @@ def gumbel_softmax(logits, tau=1, hard=False, eps=1e-10):
     based on
     https://github.com/ericjang/gumbel-softmax/blob/3c8584924603869e90ca74ac20a6a03d99a91ef9/Categorical%20VAE.ipynb
     """
-    y_soft = gumbel_softmax_sample(logits, tau=tau, eps=eps)
+    y_soft = gumbel_softmax_sample(logits, tau=tau, eps=eps, dim=dim)
     if hard:
         shape = logits.size()
         _, k = y_soft.data.max(-1)
