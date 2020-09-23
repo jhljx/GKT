@@ -63,7 +63,7 @@ class VAELoss(nn.Module):
                 loss = loss_nll + loss_kl
             else:
                 loss = loss + loss_nll + loss_kl
-        return loss
+        return loss / time_stamp_num
 
 
 
