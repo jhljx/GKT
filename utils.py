@@ -106,6 +106,6 @@ def nll_gaussian(preds, target, variance, add_const=False):
 # output: tensor, labels: tensor
 def accuracy(output, labels):
     preds = output.max(1)[1].type_as(labels)
-    correct = preds.eq(labels).double()
+    correct = preds.eq(labels.reshape(-1)).double()
     correct = correct.sum()
     return correct / len(labels)
