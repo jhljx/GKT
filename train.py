@@ -139,10 +139,10 @@ def train(epoch, best_val_loss):
     t = time.time()
     loss_train = []
     kt_train = []
+    vae_train = []
     auc_train = []
     acc_train = []
-    vae_train = []
-    gkt.train()
+
     for batch_idx, (features, questions, answers) in enumerate(train_loader):
         if args.cuda:
             features, questions, answers = features.cuda(), questions.cuda(), answers.cuda()
@@ -151,8 +151,9 @@ def train(epoch, best_val_loss):
         pred_res, ec_list, rec_list, z_prob_list = gkt(features, questions)
         loss_kt, auc, acc = kt_loss(pred_res, answers)
         kt_train.append(loss_kt.item())
-        auc_train.append(auc)
-        acc_train.append(acc)
+        if auc != -1 and acc != -1:
+            auc_train.append(auc)
+            acc_train.append(acc)
 
         if args.graph_type == 'VAE':
             if args.prior:
@@ -184,8 +185,9 @@ def train(epoch, best_val_loss):
         pred_res, ec_list, rec_list, z_prob_list = gkt(features, questions)
         loss_kt, auc, acc = kt_loss(pred_res, answers)
         kt_val.append(loss_kt.item())
-        auc_val.append(auc)
-        acc_val.append(acc)
+        if auc != -1 and acc != -1:
+            auc_val.append(auc)
+            acc_val.append(acc)
 
         loss = loss_kt
         if args.graph_type == 'VAE':
@@ -260,8 +262,9 @@ def test():
         questions = questions.long()
         pred_res, ec_list, rec_list, z_prob_list = gkt(features, questions)
         loss_kt, auc, acc = kt_loss(pred_res, answers)
-        auc_test.append(auc)
-        acc_test.append(acc)
+        if auc != -1 and acc != -1:
+            auc_test.append(auc)
+            acc_test.append(acc)
 
         kt_test.append(loss_kt.item())
         loss = loss_kt

@@ -31,12 +31,15 @@ class KTLoss(nn.Module):
         pred_one, pred_zero = pred_answers, 1.0 - pred_answers  # [batch_size, seq_len - 1]
 
         # calculate auc and accuracy metrics
-        y_true = real_answers[answer_mask].cpu().detach().numpy()
-        y_pred = pred_one[answer_mask].cpu().detach().numpy()
-        auc = roc_auc_score(y_true, y_pred)
-        output = torch.cat((pred_zero[answer_mask].reshape(-1, 1), pred_one[answer_mask].reshape(-1, 1)), dim=1)
-        label = real_answers.reshape(-1, 1)
-        acc = accuracy(output, label)
+        try:
+            y_true = real_answers[answer_mask].cpu().detach().numpy()
+            y_pred = pred_one[answer_mask].cpu().detach().numpy()
+            auc = roc_auc_score(y_true, y_pred)  # may raise ValueError
+            output = torch.cat((pred_zero[answer_mask].reshape(-1, 1), pred_one[answer_mask].reshape(-1, 1)), dim=1)
+            label = real_answers.reshape(-1, 1)
+            acc = accuracy(output, label)
+        except ValueError as e:
+            auc, acc = -1, -1
 
         # calculate NLL loss
         pred_one[answer_mask] = torch.log(pred_one[answer_mask])
