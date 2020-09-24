@@ -100,3 +100,12 @@ def nll_gaussian(preds, target, variance, add_const=False):
         const = 0.5 * np.log(2 * np.pi * variance)
         neg_log_p += const
     return neg_log_p.mean()
+
+
+# Calculate accuracy of prediction result and its corresponding label
+# output: tensor, labels: tensor
+def accuracy(output, labels):
+    preds = output.max(1)[1].type_as(labels)
+    correct = preds.eq(labels).double()
+    correct = correct.sum()
+    return correct / len(labels)

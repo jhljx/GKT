@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
-from utils import nll_gaussian, kl_categorical, kl_categorical_uniform
+from sklearn.metrics import roc_auc_score
+from utils import nll_gaussian, kl_categorical, kl_categorical_uniform, accuracy
 
 # Graph-based Knowledge Tracing: Modeling Student Proficiency Using Graph Neural Network.
 # For more information, please refer to https://dl.acm.org/doi/10.1145/3350546.3352513
@@ -27,14 +28,24 @@ class KTLoss(nn.Module):
         # real_answers shape: [batch_size, seq_len - 1]
         # Here we can directly use nn.BCELoss, but this loss doesn't have ignore_index function
         answer_mask = torch.ne(real_answers, -1)
-        pred_one, pred_zero = pred_answers, 1.0 - pred_answers
+        pred_one, pred_zero = pred_answers, 1.0 - pred_answers  # [batch_size, seq_len - 1]
+
+        # calculate auc and accuracy metrics
+        y_true = real_answers.flatten().cpu().detach().numpy()
+        y_pred = pred_one.flatten().cpu().detach().numpy()
+        auc = roc_auc_score(y_true, y_pred)
+        output = torch.cat((pred_zero.reshape(-1, 1), pred_one.reshape(-1, 1)), dim=1)
+        label = real_answers.reshape(-1, 1)
+        acc = accuracy(output, label)
+
+        # calculate NLL loss
         pred_one[answer_mask] = torch.log(pred_one[answer_mask])
         pred_zero[answer_mask] = torch.log(pred_zero[answer_mask])
         pred_answers = torch.cat((pred_zero.unsqueeze(dim=1), pred_one.unsqueeze(dim=1)), dim=1)
         # pred_answers shape: [batch_size, 2, seq_len - 1]
         nll_loss = nn.NLLLoss(ignore_index=-1)  # ignore masked values in real_answers
         loss = nll_loss(pred_answers, real_answers.long())
-        return loss
+        return loss, auc, acc
 
 
 class VAELoss(nn.Module):

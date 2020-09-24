@@ -139,6 +139,8 @@ def train(epoch, best_val_loss):
     t = time.time()
     loss_train = []
     kt_train = []
+    auc_train = []
+    acc_train = []
     vae_train = []
     gkt.train()
     for batch_idx, (features, questions, answers) in enumerate(train_loader):
@@ -147,8 +149,10 @@ def train(epoch, best_val_loss):
         optimizer.zero_grad()
         questions = questions.long()
         pred_res, ec_list, rec_list, z_prob_list = gkt(features, questions)
-        loss_kt = kt_loss(pred_res, answers)
+        loss_kt, auc, acc = kt_loss(pred_res, answers)
         kt_train.append(loss_kt.item())
+        auc_train.append(auc)
+        acc_train.append(acc)
 
         if args.graph_type == 'VAE':
             if args.prior:
@@ -156,11 +160,11 @@ def train(epoch, best_val_loss):
             else:
                 loss_vae = vae_loss(ec_list, rec_list, z_prob_list)
                 vae_train.append(loss_vae.item())
-            print('batch idx: ', batch_idx, 'loss kt: ', loss_kt.item(), 'loss vae: ', loss_vae.item())
+            print('batch idx: ', batch_idx, 'loss kt: ', loss_kt.item(), 'loss vae: ', loss_vae.item(), 'auc: ', auc, 'acc: ', acc)
             loss = loss_kt + loss_vae
         else:
             loss = loss_kt
-            print('batch idx: ', batch_idx, 'loss kt: ', loss_kt.item())
+            print('batch idx: ', batch_idx, 'loss kt: ', loss_kt.item(), 'auc: ', auc, 'acc: ', acc)
         loss_train.append(loss.item())
         loss.backward()
         optimizer.step()
@@ -169,6 +173,8 @@ def train(epoch, best_val_loss):
     loss_val = []
     kt_val = []
     vae_val = []
+    auc_val = []
+    acc_val = []
 
     gkt.eval()
     for batch_idx, (features, questions, answers) in enumerate(valid_loader):
@@ -176,8 +182,11 @@ def train(epoch, best_val_loss):
             features, questions, answers = features.cuda(), questions.cuda(), answers.cuda()
         questions = questions.long()
         pred_res, ec_list, rec_list, z_prob_list = gkt(features, questions)
-        loss_kt = kt_loss(pred_res, answers)
+        loss_kt, auc, acc = kt_loss(pred_res, answers)
         kt_val.append(loss_kt.item())
+        auc_val.append(auc)
+        acc_val.append(acc)
+
         loss = loss_kt
         if args.graph_type == 'VAE':
             loss_vae = vae_loss(ec_list, rec_list, z_prob_list)
@@ -190,14 +199,22 @@ def train(epoch, best_val_loss):
               'loss_train: {:.10f}'.format(np.mean(loss_train)),
               'kt_train: {:.10f}'.format(np.mean(kt_train)),
               'vae_train: {:.10f}'.format(np.mean(vae_train)),
+              'auc_train: {:.10f}'.format(np.mean(auc_train)),
+              'acc_train: {:.10f}'.format(np.mean(acc_train)),
               'loss_val: {:.10f}'.format(np.mean(loss_val)),
               'kt_val: {:.10f}'.format(np.mean(kt_val)),
               'vae_val: {:.10f}'.format(np.mean(vae_val)),
+              'auc_val: {:.10f}'.format(np.mean(auc_val)),
+              'acc_val: {:.10f}'.format(np.mean(acc_val)),
               'time: {:.4f}s'.format(time.time() - t))
     else:
         print('Epoch: {:04d}'.format(epoch),
               'loss_train: {:.10f}'.format(np.mean(loss_train)),
+              'auc_train: {:.10f}'.format(np.mean(auc_train)),
+              'acc_train: {:.10f}'.format(np.mean(acc_train)),
               'loss_val: {:.10f}'.format(np.mean(loss_val)),
+              'auc_val: {:.10f}'.format(np.mean(auc_val)),
+              'acc_val: {:.10f}'.format(np.mean(acc_val)),
               'time: {:.4f}s'.format(time.time() - t))
     if args.save_dir and np.mean(loss_val) < best_val_loss:
         print('Best model so far, saving...')
@@ -207,14 +224,22 @@ def train(epoch, best_val_loss):
                   'loss_train: {:.10f}'.format(np.mean(loss_train)),
                   'kt_train: {:.10f}'.format(np.mean(kt_train)),
                   'vae_train: {:.10f}'.format(np.mean(vae_train)),
+                  'auc_train: {:.10f}'.format(np.mean(auc_train)),
+                  'acc_train: {:.10f}'.format(np.mean(acc_train)),
                   'loss_val: {:.10f}'.format(np.mean(loss_val)),
                   'kt_val: {:.10f}'.format(np.mean(kt_val)),
                   'vae_val: {:.10f}'.format(np.mean(vae_val)),
+                  'auc_val: {:.10f}'.format(np.mean(auc_val)),
+                  'acc_val: {:.10f}'.format(np.mean(acc_val)),
                   'time: {:.4f}s'.format(time.time() - t), file=log)
         else:
             print('Epoch: {:04d}'.format(epoch),
                   'loss_train: {:.10f}'.format(np.mean(loss_train)),
+                  'auc_train: {:.10f}'.format(np.mean(auc_train)),
+                  'acc_train: {:.10f}'.format(np.mean(acc_train)),
                   'loss_val: {:.10f}'.format(np.mean(loss_val)),
+                  'auc_val: {:.10f}'.format(np.mean(auc_val)),
+                  'acc_val: {:.10f}'.format(np.mean(acc_val)),
                   'time: {:.4f}s'.format(time.time() - t), file=log)
         log.flush()
     return np.mean(loss_val)
@@ -224,6 +249,8 @@ def test():
     loss_test = []
     kt_test = []
     vae_test = []
+    auc_test = []
+    acc_test = []
 
     gkt.eval()
     gkt.load_state_dict(torch.load(gkt_file))
@@ -232,7 +259,10 @@ def test():
             features, questions, answers = features.cuda(), questions.cuda(), answers.cuda()
         questions = questions.long()
         pred_res, ec_list, rec_list, z_prob_list = gkt(features, questions)
-        loss_kt = kt_loss(pred_res, answers)
+        loss_kt, auc, acc = kt_loss(pred_res, answers)
+        auc_test.append(auc)
+        acc_test.append(acc)
+
         kt_test.append(loss_kt.item())
         loss = loss_kt
         if args.graph_type == 'VAE':
@@ -247,9 +277,13 @@ def test():
     if args.graph_type == 'VAE':
         print('loss_test: {:.10f}'.format(np.mean(loss_test)),
               'kt_test: {:.10f}'.format(np.mean(kt_test)),
-              'vae_test: {:.10f}'.format(np.mean(vae_test)))
+              'vae_test: {:.10f}'.format(np.mean(vae_test)),
+              'auc_train: {:.10f}'.format(np.mean(auc_test)),
+              'acc_train: {:.10f}'.format(np.mean(acc_test)))
     else:
-        print('loss_test: {:.10f}'.format(np.mean(loss_test)))
+        print('loss_test: {:.10f}'.format(np.mean(loss_test)),
+              'auc_train: {:.10f}'.format(np.mean(auc_test)),
+              'acc_train: {:.10f}'.format(np.mean(acc_test)))
     if args.save_dir:
         print('--------------------------------', file=log)
         print('--------Testing-----------------', file=log)
@@ -257,9 +291,13 @@ def test():
         if args.graph_type == 'VAE':
             print('loss_test: {:.10f}'.format(np.mean(loss_test)),
                   'kt_test: {:.10f}'.format(np.mean(kt_test)),
-                  'vae_test: {:.10f}'.format(np.mean(vae_test)), file=log)
+                  'vae_test: {:.10f}'.format(np.mean(vae_test)),
+                  'auc_train: {:.10f}'.format(np.mean(auc_test)),
+                  'acc_train: {:.10f}'.format(np.mean(acc_test)), file=log)
         else:
-            print('loss_test: {:.10f}'.format(np.mean(loss_test)), file=log)
+            print('loss_test: {:.10f}'.format(np.mean(loss_test)),
+                  'auc_train: {:.10f}'.format(np.mean(auc_test)),
+                  'acc_train: {:.10f}'.format(np.mean(acc_test)), file=log)
         log.flush()
 
 
