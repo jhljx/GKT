@@ -22,17 +22,17 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--no-cuda', action='store_false', default=True, help='Disables CUDA training.')
 parser.add_argument('--seed', type=int, default=42, help='Random seed.')
 parser.add_argument('--data-dir', type=str, default='data', help='Data dir for loading input data.')
-parser.add_argument('--data-file', type=str, default='skill_builder_data.csv', help='Name of input data file.')
+parser.add_argument('--data-file', type=str, default='daily_2019_before_4.csv', help='Name of input data file.')
 parser.add_argument('--save-dir', type=str, default='logs', help='Where to save the trained model, leave empty to not save anything.')
 parser.add_argument('-graph-save-dir', type=str, default='graphs', help='Dir for saving concept graphs.')
 parser.add_argument('--load-dir', type=str, default='', help='Where to load the trained model if finetunning. ' + 'Leave empty to train from scratch')
 parser.add_argument('--dkt-graph-dir', type=str, default='dkt-graph', help='Where to load the pretrained dkt graph.')
 parser.add_argument('--dkt-graph', type=str, default='dkt_graph.txt', help='DKT graph data file name.')
-parser.add_argument('--hid-dim', type=int, default=128, help='Dimension of hidden knowledge states.')
-parser.add_argument('--emb-dim', type=int, default=64, help='Dimension of concept embedding.')
-parser.add_argument('--attn-dim', type=int, default=64, help='Dimension of multi-head attention layers.')
-parser.add_argument('--vae-encoder-dim', type=int, default=64, help='Dimension of hidden layers in vae encoder.')
-parser.add_argument('--vae-decoder-dim', type=int, default=64, help='Dimension of hidden layers in vae decoder.')
+parser.add_argument('--hid-dim', type=int, default=32, help='Dimension of hidden knowledge states.')
+parser.add_argument('--emb-dim', type=int, default=32, help='Dimension of concept embedding.')
+parser.add_argument('--attn-dim', type=int, default=32, help='Dimension of multi-head attention layers.')
+parser.add_argument('--vae-encoder-dim', type=int, default=32, help='Dimension of hidden layers in vae encoder.')
+parser.add_argument('--vae-decoder-dim', type=int, default=32, help='Dimension of hidden layers in vae decoder.')
 parser.add_argument('--edge-types', type=int, default=2, help='The number of edge types to infer.')
 parser.add_argument('--graph-type', type=str, default='Dense', help='The type of latent concept graph.')
 parser.add_argument('--dropout', type=float, default=0.5, help='Dropout rate (1 - keep probability).')
@@ -42,9 +42,9 @@ parser.add_argument('--hard', action='store_true', default=False, help='Uses dis
 parser.add_argument('--no-factor', action='store_true', default=False, help='Disables factor graph model.')
 parser.add_argument('--prior', action='store_true', default=False, help='Whether to use sparsity prior.')
 parser.add_argument('--var', type=float, default=1, help='Output variance.')
-parser.add_argument('--epochs', type=int, default=500, help='Number of epochs to train.')
-parser.add_argument('--batch-size', type=int, default=1, help='Number of samples per batch.')
-parser.add_argument('--train-ratio', type=float, default=0.7, help='The ratio of training samples in a dataset.')
+parser.add_argument('--epochs', type=int, default=50, help='Number of epochs to train.')
+parser.add_argument('--batch-size', type=int, default=16, help='Number of samples per batch.')
+parser.add_argument('--train-ratio', type=float, default=0.6, help='The ratio of training samples in a dataset.')
 parser.add_argument('--val-ratio', type=float, default=0.2, help='The ratio of validation samples in a dataset.')
 parser.add_argument('--shuffle', type=bool, default=True, help='Whether to shuffle the dataset or not.')
 parser.add_argument('--lr', type=float, default=0.001, help='Initial learning rate.')
@@ -161,11 +161,11 @@ def train(epoch, best_val_loss):
             else:
                 loss_vae = vae_loss(ec_list, rec_list, z_prob_list)
                 vae_train.append(loss_vae.item())
-            print('batch idx: ', batch_idx, 'loss kt: ', loss_kt.item(), 'loss vae: ', loss_vae.item(), 'auc: ', auc, 'acc: ', acc)
+            print('batch idx: ', batch_idx, 'loss kt: ', loss_kt.item(), 'loss vae: ', loss_vae.item(), 'auc: ', auc, 'acc: ', acc.item())
             loss = loss_kt + loss_vae
         else:
             loss = loss_kt
-            print('batch idx: ', batch_idx, 'loss kt: ', loss_kt.item(), 'auc: ', auc, 'acc: ', acc)
+            print('batch idx: ', batch_idx, 'loss kt: ', loss_kt.item(), 'auc: ', auc, 'acc: ', acc.item())
         loss_train.append(loss.item())
         loss.backward()
         optimizer.step()
@@ -187,7 +187,7 @@ def train(epoch, best_val_loss):
         kt_val.append(loss_kt.item())
         if auc != -1 and acc != -1:
             auc_val.append(auc)
-            acc_val.append(acc)
+            acc_val.append(acc.item())
 
         loss = loss_kt
         if args.graph_type == 'VAE':
@@ -264,7 +264,7 @@ def test():
         loss_kt, auc, acc = kt_loss(pred_res, answers)
         if auc != -1 and acc != -1:
             auc_test.append(auc)
-            acc_test.append(acc)
+            acc_test.append(acc.item())
 
         kt_test.append(loss_kt.item())
         loss = loss_kt
@@ -281,12 +281,12 @@ def test():
         print('loss_test: {:.10f}'.format(np.mean(loss_test)),
               'kt_test: {:.10f}'.format(np.mean(kt_test)),
               'vae_test: {:.10f}'.format(np.mean(vae_test)),
-              'auc_train: {:.10f}'.format(np.mean(auc_test)),
-              'acc_train: {:.10f}'.format(np.mean(acc_test)))
+              'auc_test: {:.10f}'.format(np.mean(auc_test)),
+              'acc_test: {:.10f}'.format(np.mean(acc_test)))
     else:
         print('loss_test: {:.10f}'.format(np.mean(loss_test)),
-              'auc_train: {:.10f}'.format(np.mean(auc_test)),
-              'acc_train: {:.10f}'.format(np.mean(acc_test)))
+              'auc_test: {:.10f}'.format(np.mean(auc_test)),
+              'acc_test: {:.10f}'.format(np.mean(acc_test)))
     if args.save_dir:
         print('--------------------------------', file=log)
         print('--------Testing-----------------', file=log)
@@ -295,12 +295,12 @@ def test():
             print('loss_test: {:.10f}'.format(np.mean(loss_test)),
                   'kt_test: {:.10f}'.format(np.mean(kt_test)),
                   'vae_test: {:.10f}'.format(np.mean(vae_test)),
-                  'auc_train: {:.10f}'.format(np.mean(auc_test)),
-                  'acc_train: {:.10f}'.format(np.mean(acc_test)), file=log)
+                  'auc_test: {:.10f}'.format(np.mean(auc_test)),
+                  'acc_test: {:.10f}'.format(np.mean(acc_test)), file=log)
         else:
             print('loss_test: {:.10f}'.format(np.mean(loss_test)),
-                  'auc_train: {:.10f}'.format(np.mean(auc_test)),
-                  'acc_train: {:.10f}'.format(np.mean(acc_test)), file=log)
+                  'auc_test: {:.10f}'.format(np.mean(auc_test)),
+                  'acc_test: {:.10f}'.format(np.mean(acc_test)), file=log)
         log.flush()
 
 
