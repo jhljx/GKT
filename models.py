@@ -44,20 +44,20 @@ class GKT(nn.Module):
 
         # f_self function and f_neighbor functions
         mlp_input_dim = hidden_dim + embedding_dim
-        self.f_self = MLP(mlp_input_dim, mlp_input_dim, mlp_input_dim, dropout=dropout, bias=bias)
+        self.f_self = MLP(mlp_input_dim, hidden_dim, hidden_dim, dropout=dropout, bias=bias)
         self.f_neighbor_list = nn.ModuleList()
         if graph_type in ['Dense', 'Transition', 'DKT', 'PAM']:
             # f_in and f_out functions
-            self.f_neighbor_list.append(MLP(2 * mlp_input_dim, mlp_input_dim, mlp_input_dim, dropout=dropout, bias=bias))
-            self.f_neighbor_list.append(MLP(2 * mlp_input_dim, mlp_input_dim, mlp_input_dim, dropout=dropout, bias=bias))
+            self.f_neighbor_list.append(MLP(2 * mlp_input_dim, hidden_dim, hidden_dim, dropout=dropout, bias=bias))
+            self.f_neighbor_list.append(MLP(2 * mlp_input_dim, hidden_dim, hidden_dim, dropout=dropout, bias=bias))
         else:  # ['MHA', 'VAE']
             for i in range(edge_type_num):
-                self.f_neighbor_list.append(MLP(2 * mlp_input_dim, mlp_input_dim, mlp_input_dim, dropout=dropout, bias=bias))
+                self.f_neighbor_list.append(MLP(2 * mlp_input_dim, hidden_dim, hidden_dim, dropout=dropout, bias=bias))
 
         # Erase & Add Gate
-        self.erase_add_gate = EraseAddGate(mlp_input_dim, concept_num)
+        self.erase_add_gate = EraseAddGate(hidden_dim, concept_num)
         # Gate Recurrent Unit
-        self.gru = nn.GRUCell(mlp_input_dim, hidden_dim, bias=bias)
+        self.gru = nn.GRUCell(hidden_dim, hidden_dim, bias=bias)
         # prediction layer
         self.predict = nn.Linear(hidden_dim, 1, bias=bias)
 
@@ -93,16 +93,15 @@ class GKT(nn.Module):
         return tmp_ht
 
     # GNN aggregation step, as shown in 3.3.2 Equation 1 of the paper
-    def _agg_neighbors(self, tmp_ht, qt, batch_size):
+    def _agg_neighbors(self, tmp_ht, qt):
         r"""
         Parameters:
             tmp_ht: temporal hidden representations of all concepts after the aggregate step
             qt: question indices for all students in a batch at the current timestamp
-            batch_size: the size of a student batch
         Shape:
             tmp_ht: [batch_size, concept_num, hidden_dim + embedding_dim]
             qt: [batch_size]
-            m_next: [batch_size, concept_num, hidden_dim + embedding_dim]
+            m_next: [batch_size, concept_num, hidden_dim]
         Return:
             m_next: hidden representations of all concepts aggregating neighboring representations at the next timestamp
             concept_embedding: input of VAE (optional)
@@ -110,26 +109,24 @@ class GKT(nn.Module):
             z_prob: probability distribution of latent variable z in VAE (optional)
         """
         qt_mask = torch.ne(qt, -1)  # [batch_size], qt != -1
+        masked_qt = qt[qt_mask]  # [mask_num, ]
         masked_tmp_ht = tmp_ht[qt_mask]  # [mask_num, concept_num, hidden_dim + embedding_dim]
         mask_num = masked_tmp_ht.shape[0]
-        # m_next = Variable(torch.zeros((batch_size, self.concept_num, self.hidden_dim + self.embedding_dim), device=qt.device))
-        self_index_tuple = (torch.arange(mask_num, device=qt.device), qt[qt_mask].long())
+        self_index_tuple = (torch.arange(mask_num, device=qt.device), masked_qt.long())
         self_ht = masked_tmp_ht[self_index_tuple]  # [mask_num, hidden_dim + embedding_dim]
-        self_features = self.f_self(self_ht)
+        self_features = self.f_self(self_ht)  # [mask_num, hidden_dim]
         expanded_self_ht = self_ht.unsqueeze(dim=1).repeat(1, self.concept_num, 1)  #[mask_num, concept_num, hidden_dim + embedding_dim]
-
         neigh_ht = torch.cat((expanded_self_ht, masked_tmp_ht), dim=-1)  #[mask_num, concept_num, 2 * (hidden_dim + embedding_dim)]
-        masked_qt = qt[qt_mask]  # [mask_num, ]
-        concept_index = torch.arange(self.concept_num, device=qt.device)
-        concept_embedding = self.emb_c(concept_index)  # [concept_num, embedding_dim]
-        rec_embedding, z_prob = None, None
+        concept_embedding, rec_embedding, z_prob = None, None, None
 
         if self.graph_type in ['Dense', 'Transition', 'DKT', 'PAM']:
             adj = self.graph[masked_qt.long(), :].unsqueeze(dim=-1)  # [mask_num, concept_num, 1]
             reverse_adj = self.graph[:, masked_qt.long()].transpose(0, 1).unsqueeze(dim=-1)  # [mask_num, concept_num, 1]
-            # self.f_neighbor_list[0](neigh_ht) shape: [mask_num, concept_num, (hidden_dim + embedding_dim)]
+            # self.f_neighbor_list[0](neigh_ht) shape: [mask_num, concept_num, hidden_dim]
             neigh_features = adj * self.f_neighbor_list[0](neigh_ht) + reverse_adj * self.f_neighbor_list[1](neigh_ht)
         else:  # ['MHA', 'VAE']
+            concept_index = torch.arange(self.concept_num, device=qt.device)
+            concept_embedding = self.emb_c(concept_index)  # [concept_num, embedding_dim]
             if self.graph_type == 'MHA':
                 query = self.emb_c(masked_qt)
                 key = concept_embedding
@@ -146,21 +143,19 @@ class GKT(nn.Module):
                     neigh_features = neigh_features + adj * self.f_neighbor_list[k](neigh_ht)
             if self.graph_type == 'MHA':
                 neigh_features = 1. / self.edge_type_num * neigh_features
-        # neigh_features: [mask_num, concept_num, hidden_dim + embedding_dim]
-        m_next = tmp_ht
-        m_next[~qt_mask] = 0.
+        # neigh_features: [mask_num, concept_num, hidden_dim]
+        m_next = tmp_ht[:, :, :self.hidden_dim]
         m_next[qt_mask] = neigh_features
         m_next[qt_mask] = m_next[qt_mask].index_put(self_index_tuple, self_features)
         return m_next, concept_embedding, rec_embedding, z_prob
 
     # Update step, as shown in Section 3.3.2 of the paper
-    def _update(self, tmp_ht, ht, qt, batch_size):
+    def _update(self, tmp_ht, ht, qt):
         r"""
         Parameters:
             tmp_ht: temporal hidden representations of all concepts after the aggregate step
             ht: hidden representations of all concepts at the current timestamp
             qt: question indices for all students in a batch at the current timestamp
-            batch_size: the size of a student batch
         Shape:
             tmp_ht: [batch_size, concept_num, hidden_dim + embedding_dim]
             ht: [batch_size, concept_num, hidden_dim]
@@ -175,17 +170,14 @@ class GKT(nn.Module):
         qt_mask = torch.ne(qt, -1)  # [batch_size], qt != -1
         mask_num = qt_mask.nonzero().shape[0]
         # GNN Aggregation
-        m_next, concept_embedding, rec_embedding, z_prob = self._agg_neighbors(tmp_ht, qt, batch_size)  # [batch_size, concept_num, hidden_dim + embedding_dim]
+        m_next, concept_embedding, rec_embedding, z_prob = self._agg_neighbors(tmp_ht, qt)  # [batch_size, concept_num, hidden_dim]
         # Erase & Add Gate
-        feature_dim = self.hidden_dim + self.embedding_dim
-        # new_m_next = Variable(torch.zeros((batch_size, self.concept_num, feature_dim), device=qt.device))
-        m_next[qt_mask] = self.erase_add_gate(m_next[qt_mask])  # [mask_num, concept_num, feature_dim]
+        m_next[qt_mask] = self.erase_add_gate(m_next[qt_mask])  # [mask_num, concept_num, hidden_dim]
         # GRU
-        # h_next = Variable(torch.zeros((batch_size, self.concept_num, self.hidden_dim), device=qt.device))
-        h_next = m_next[:, :, :self.hidden_dim]
-        res = self.gru(m_next[qt_mask].reshape(-1, feature_dim), ht[qt_mask].reshape(-1, self.hidden_dim))  # [mask_num * concept_num, hidden_num]
+        h_next = m_next
+        res = self.gru(m_next[qt_mask].reshape(-1, self.hidden_dim), ht[qt_mask].reshape(-1, self.hidden_dim))  # [mask_num * concept_num, hidden_num]
         index_tuple = (torch.arange(mask_num, device=qt_mask.device), )
-        h_next = h_next.index_put(index_tuple, res.reshape(-1, self.concept_num, self.hidden_dim))
+        h_next[qt_mask] = h_next[qt_mask].index_put(index_tuple, res.reshape(-1, self.concept_num, self.hidden_dim))
         return h_next, concept_embedding, rec_embedding, z_prob
 
     # Predict step, as shown in Section 3.3.3 of the paper
@@ -202,12 +194,9 @@ class GKT(nn.Module):
             y: predicted correct probability of all concepts at the next timestamp
         """
         qt_mask = torch.ne(qt, -1)  # [batch_size], qt != -1
-        # y = Variable(torch.zeros_like(h_next, device=qt.device))
-        # y = Variable(torch.zeros(len(qt), self.concept_num, device=qt.device))    # [batch_size, concept_num]
         y = self.predict(h_next).squeeze(dim=-1)  # [batch_size, concept_num]
-        y[~qt_mask] = 0.
         y[qt_mask] = torch.sigmoid(y[qt_mask])  # [batch_size, concept_num]
-        # the masked positions will have probability=0
+        y[~qt_mask] = 0.
         return y
 
     def _get_next_pred(self, yt, questions, i, batch_size):
@@ -302,8 +291,10 @@ class GKT(nn.Module):
         for i in range(seq_len):
             xt = features[:, i, :]  # [batch_size, 2 * concept_num]
             qt = questions[:, i]  # [batch_size]
-            tmp_ht = self._aggregate(xt, qt, ht, batch_size)
-            h_next, concept_embedding, rec_embedding, z_prob = self._update(tmp_ht, ht, qt, batch_size)
+            qt_mask = torch.ne(qt, -1)  # [batch_size], next_qt != -1
+            tmp_ht = self._aggregate(xt, qt, ht, batch_size)  # [batch_size, concept_num, hidden_dim + embedding_dim]
+            h_next, concept_embedding, rec_embedding, z_prob = self._update(tmp_ht, ht, qt)  # [batch_size, concept_num, hidden_dim]
+            ht[qt_mask] = h_next[qt_mask]  # update new ht
             yt = self._predict(h_next, qt)  # [batch_size, concept_num]
             if i < seq_len - 1:
                 pred = self._get_next_pred(yt, questions, i, batch_size)
@@ -359,6 +350,7 @@ class MultiHeadAttention(nn.Module):
             mask: mask matrix
         Shape:
             qt: [mask_num]
+            qt_mask: [batch_size, ]
             query: [mask_num, embedding_dim]
             key: [concept_num, embedding_dim]
         Return:
