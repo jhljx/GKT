@@ -35,7 +35,7 @@ parser.add_argument('--vae-encoder-dim', type=int, default=32, help='Dimension o
 parser.add_argument('--vae-decoder-dim', type=int, default=32, help='Dimension of hidden layers in vae decoder.')
 parser.add_argument('--edge-types', type=int, default=2, help='The number of edge types to infer.')
 parser.add_argument('--graph-type', type=str, default='MHA', help='The type of latent concept graph.')
-parser.add_argument('--dropout', type=float, default=0.5, help='Dropout rate (1 - keep probability).')
+parser.add_argument('--dropout', type=float, default=0, help='Dropout rate (1 - keep probability).')
 parser.add_argument('--bias', type=bool, default=True, help='Whether to add bias for neural network layers.')
 parser.add_argument('--temp', type=float, default=0.5, help='Temperature for Gumbel softmax.')
 parser.add_argument('--hard', action='store_true', default=False, help='Uses discrete samples in training forward pass.')
@@ -43,7 +43,7 @@ parser.add_argument('--no-factor', action='store_true', default=False, help='Dis
 parser.add_argument('--prior', action='store_true', default=False, help='Whether to use sparsity prior.')
 parser.add_argument('--var', type=float, default=1, help='Output variance.')
 parser.add_argument('--epochs', type=int, default=50, help='Number of epochs to train.')
-parser.add_argument('--batch-size', type=int, default=16, help='Number of samples per batch.')
+parser.add_argument('--batch-size', type=int, default=128, help='Number of samples per batch.')
 parser.add_argument('--train-ratio', type=float, default=0.6, help='The ratio of training samples in a dataset.')
 parser.add_argument('--val-ratio', type=float, default=0.2, help='The ratio of validation samples in a dataset.')
 parser.add_argument('--shuffle', type=bool, default=True, help='Whether to shuffle the dataset or not.')
@@ -144,6 +144,7 @@ def train(epoch, best_val_loss):
     acc_train = []
 
     for batch_idx, (features, questions, answers) in enumerate(train_loader):
+        t1 = time.time()
         if args.cuda:
             features, questions, answers = features.cuda(), questions.cuda(), answers.cuda()
         optimizer.zero_grad()
@@ -161,15 +162,16 @@ def train(epoch, best_val_loss):
             else:
                 loss_vae = vae_loss(ec_list, rec_list, z_prob_list)
                 vae_train.append(loss_vae.item())
-            print('batch idx: ', batch_idx, 'loss kt: ', loss_kt.item(), 'loss vae: ', loss_vae.item(), 'auc: ', auc, 'acc: ', acc.item())
+            print('batch idx: ', batch_idx, 'loss kt: ', loss_kt.item(), 'loss vae: ', loss_vae.item(), 'auc: ', auc, 'acc: ', acc.item(), end=' ')
             loss = loss_kt + loss_vae
         else:
             loss = loss_kt
-            print('batch idx: ', batch_idx, 'loss kt: ', loss_kt.item(), 'auc: ', auc, 'acc: ', acc.item())
+            print('batch idx: ', batch_idx, 'loss kt: ', loss_kt.item(), 'auc: ', auc, 'acc: ', acc.item(), end=' ')
         loss_train.append(loss.item())
         loss.backward()
         optimizer.step()
         scheduler.step()
+        print('cost time: ', str(time.time() - t1))
 
     loss_val = []
     kt_val = []
