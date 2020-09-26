@@ -13,7 +13,7 @@ To run this code you need the following:
 - python3
 - numpy, pandas, scipy and torch packages:
 ```
-pip3 install numpy pandas scipy torch
+pip3 install numpy pandas scipy sklearn torch
 ```
 
 ## Training the model
