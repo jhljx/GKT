@@ -34,7 +34,7 @@ parser.add_argument('--attn-dim', type=int, default=32, help='Dimension of multi
 parser.add_argument('--vae-encoder-dim', type=int, default=32, help='Dimension of hidden layers in vae encoder.')
 parser.add_argument('--vae-decoder-dim', type=int, default=32, help='Dimension of hidden layers in vae decoder.')
 parser.add_argument('--edge-types', type=int, default=2, help='The number of edge types to infer.')
-parser.add_argument('--graph-type', type=str, default='Dense', help='The type of latent concept graph.')
+parser.add_argument('--graph-type', type=str, default='MHA', help='The type of latent concept graph.')
 parser.add_argument('--dropout', type=float, default=0.5, help='Dropout rate (1 - keep probability).')
 parser.add_argument('--bias', type=bool, default=True, help='Whether to add bias for neural network layers.')
 parser.add_argument('--temp', type=float, default=0.5, help='Temperature for Gumbel softmax.')
