@@ -110,6 +110,7 @@ def load_dataset(file_path, batch_size, graph_type, dkt_graph_path=None, train_r
     val_size = int(val_ratio * student_num)
     test_size = student_num - train_size - val_size
     train_dataset, val_dataset, test_dataset = torch.utils.data.random_split(kt_dataset, [train_size, val_size, test_size])
+    print('train_size: ', train_size, 'val_size: ', val_size, 'test_size: ', test_size)
     train_data_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=shuffle, collate_fn=pad_collate)
     valid_data_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=shuffle, collate_fn=pad_collate)
     test_data_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=shuffle, collate_fn=pad_collate)
