@@ -34,7 +34,7 @@ class MLP(nn.Module):
                 m.bias.data.zero_()
 
     def batch_norm(self, inputs):
-        if inputs.numel() // self.output_dim == 1 or inputs.numel() == 0:
+        if inputs.numel() == self.output_dim or inputs.numel() == 0:
             # batch_size == 1 or 0 will cause BatchNorm error, so return the input directly
             return inputs
         if len(inputs.size()) == 3:
