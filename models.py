@@ -320,7 +320,7 @@ class MultiHeadAttention(nn.Module):
         self.w_qs = nn.Linear(input_dim, n_head * d_k, bias=False)
         self.w_ks = nn.Linear(input_dim, n_head * d_k, bias=False)
         self.attention = ScaledDotProductAttention(temperature=d_k ** 0.5, attn_dropout=dropout)
-        # inferred latent graph
+        # inferred latent graph, used for saving and visualization
         self.graphs = torch.zeros(n_head, concept_num, concept_num)
 
     def _get_graph(self, attn_score, qt):
@@ -337,8 +337,8 @@ class MultiHeadAttention(nn.Module):
         graphs = Variable(torch.zeros(self.n_head, self.concept_num, self.concept_num))
         for k in range(self.n_head):
             index_tuple = (qt.long(), )
-            graphs[k] = graphs[k].index_put(index_tuple, attn_score[k])
-            self.graphs[k] = self.graphs[k].index_put(index_tuple, attn_score[k])
+            graphs[k] = graphs[k].index_put(index_tuple, attn_score[k])  # used for calculation
+            self.graphs[k] = self.graphs[k].index_put(index_tuple, attn_score[k])  # used for saving and visualization
         return graphs
 
     def forward(self, qt, query, key, mask=None):
@@ -383,7 +383,7 @@ class VAE(nn.Module):
         self.tau = tau
         self.encoder = MLPEncoder(input_dim, hidden_dim, output_dim, factor=factor, dropout=dropout, bias=bias)
         self.decoder = MLPDecoder(input_dim, msg_hidden_dim, msg_output_dim, hidden_dim, edge_type_num, dropout=dropout, bias=bias)
-        # inferred latent graph
+        # inferred latent graph, used for saving and visualization
         self.graphs = torch.zeros(edge_type_num, concept_num, concept_num)
 
     def _get_graph(self, edges, rel_rec, rel_send):
@@ -404,8 +404,8 @@ class VAE(nn.Module):
         graphs = Variable(torch.zeros(self.edge_type_num, self.concept_num, self.concept_num))
         for k in range(self.edge_type_num):
             index_tuple = (x_index, y_index)
-            graphs[k] = graphs[k].index_put(index_tuple, edges[:, k])
-            self.graphs[k] = self.graphs[k].index_put(index_tuple, edges[:, k])
+            graphs[k] = graphs[k].index_put(index_tuple, edges[:, k])  # used for calculation
+            self.graphs[k] = self.graphs[k].index_put(index_tuple, edges[:, k])  # used for saving and visualization
         return graphs
 
     def forward(self, data, rel_send, rel_rec):
