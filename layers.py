@@ -18,7 +18,6 @@ class MLP(nn.Module):
         super(MLP, self).__init__()
         self.fc1 = nn.Linear(input_dim, hidden_dim, bias=bias)
         self.fc2 = nn.Linear(hidden_dim, output_dim, bias=bias)
-        self.bias = bias
         self.norm = nn.BatchNorm1d(output_dim)
         # the paper said they added Batch Normalization for the output of MLPs, as shown in Section 4.2
         self.dropout = dropout
@@ -29,8 +28,6 @@ class MLP(nn.Module):
         for m in self.modules():
             if isinstance(m, nn.Linear):
                 nn.init.xavier_normal_(m.weight.data)
-                if self.bias:
-                    m.bias.data.fill_(0.1)
             elif isinstance(m, nn.BatchNorm1d):
                 m.weight.data.fill_(1)
                 m.bias.data.zero_()
@@ -77,8 +74,6 @@ class EraseAddGate(nn.Module):
         for m in self.modules():
             if isinstance(m, nn.Linear):
                 nn.init.xavier_normal_(m.weight.data)
-                if self.bias:
-                    m.bias.data.fill_(0.1)
 
     def forward(self, x):
         r"""
