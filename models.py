@@ -4,6 +4,7 @@ import scipy.sparse as sp
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from torch.autograd import Variable
 from layers import MLP, EraseAddGate, MLPEncoder, MLPDecoder, ScaledDotProductAttention
 from utils import gumbel_softmax
@@ -70,7 +71,7 @@ class GKT(nn.Module):
             ht: hidden representations of all concepts at the current timestamp
             batch_size: the size of a student batch
         Shape:
-            xt: [batch_size, 2 * concept_num]
+            xt: [batch_size]
             qt: [batch_size]
             ht: [batch_size, concept_num, hidden_dim]
             tmp_ht: [batch_size, concept_num, hidden_dim + embedding_dim]
@@ -80,7 +81,9 @@ class GKT(nn.Module):
         qt_mask = torch.ne(qt, -1)  # [batch_size], qt != -1
         x_idx_mat = torch.arange(2 * self.concept_num, device=xt.device)
         x_embedding = self.emb_x(x_idx_mat)  # [2 * concept_num, embedding_dim]
-        res_embedding = xt[qt_mask].mm(x_embedding)  # [mask_num, embedding_dim]
+        feat_one_hot = torch.eye(2 * self.concept_num)
+        masked_feat = F.embedding(xt[qt_mask], feat_one_hot)  # [mask_num, 2 * concept_num]
+        res_embedding = masked_feat.mm(x_embedding)  # [mask_num, embedding_dim]
         mask_num = res_embedding.shape[0]
 
         concept_idx_mat = self.concept_num * torch.ones((batch_size, self.concept_num), device=xt.device).long()
@@ -213,12 +216,11 @@ class GKT(nn.Module):
         Return:
             pred: predicted correct probability of the question answered at the next timestamp
         """
-        one_hot_qt = torch.zeros((batch_size, self.concept_num), device=yt.device)
+        one_hot = torch.eye(self.concept_num, device=yt.device)
+        one_hot = torch.cat((one_hot, torch.zeros(1, self.concept_num)), dim=0)
         next_qt = questions[:, i + 1]
-        qt_mask = torch.ne(next_qt, -1)  # [batch_size], next_qt != -1
-        mask_num = qt_mask.sum().item()
-        index_tuple = (torch.arange(mask_num, device=yt.device).long(), next_qt[qt_mask].long())
-        one_hot_qt[qt_mask] = one_hot_qt[qt_mask].index_put(index_tuple, torch.ones(mask_num, device=yt.device))
+        next_qt[next_qt == -1] = self.concept_num
+        one_hot_qt = F.embedding(next_qt.long(), one_hot)  # [batch_size, concept_num]
         # dot product between yt and one_hot_qt
         pred = (yt * one_hot_qt).sum(dim=1)  # [batch_size, ]
         return pred
@@ -276,20 +278,13 @@ class GKT(nn.Module):
             z_prob: probability distribution of latent variable z in VAE (optional)
         """
         batch_size, seq_len = features.shape
-        # feature_idx = torch.tensor(feature_list).long()  # [student_num, max_seq_len]
-        feature_dim = 2 * self.concept_num
-        features[features == -1] = feature_dim
-        feat_one_hot = torch.eye(feature_dim)
-        feat_one_hot = torch.cat((feat_one_hot, -1 * torch.ones(1, feature_dim)), dim=0)
-        features = F.embedding(features, feat_one_hot)
-
         ht = Variable(torch.zeros((batch_size, self.concept_num, self.hidden_dim), device=features.device))
         pred_list = []
         ec_list = []  # concept embedding list in VAE
         rec_list = []  # reconstructed embedding list in VAE
         z_prob_list = []  # probability distribution of latent variable z in VAE
         for i in range(seq_len):
-            xt = features[:, i, :]  # [batch_size, 2 * concept_num]
+            xt = features[:, i]  # [batch_size]
             qt = questions[:, i]  # [batch_size]
             qt_mask = torch.ne(qt, -1)  # [batch_size], next_qt != -1
             tmp_ht = self._aggregate(xt, qt, ht, batch_size)  # [batch_size, concept_num, hidden_dim + embedding_dim]
@@ -429,3 +424,68 @@ class VAE(nn.Module):
         output = self.decoder(data, edges, rel_rec, rel_send)  # [concept_num, embedding_dim]
         graphs = self._get_graph(edges, rel_rec, rel_send)
         return graphs, output, prob
+
+
+class DKT(nn.Module):
+
+    def __init__(self, feature_dim, hidden_dim, output_dim, bias=True):
+        super(DKT, self).__init__()
+        self.feature_dim = feature_dim
+        self.hidden_dim = hidden_dim
+        self.output_dim = output_dim
+        self.rnn = nn.LSTM(feature_dim, hidden_dim, bias=bias, batch_first=True)
+        self.f_out = nn.Linear(hidden_dim, output_dim, bias=bias)
+
+    def _get_next_pred(self, yt, questions):
+        r"""
+        Parameters:
+            y: predicted correct probability of all concepts at the next timestamp
+            questions: question index matrix
+        Shape:
+            y: [batch_size, seq_len - 1, output_dim]
+            questions: [batch_size, seq_len]
+            pred: [batch_size, ]
+        Return:
+            pred: predicted correct probability of the question answered at the next timestamp
+        """
+        one_hot = torch.eye(self.output_dim, device=yt.device)
+        one_hot = torch.cat((one_hot, torch.zeros(1, self.output_dim)), dim=0)
+        next_qt = questions[:, 1:]  # [batch_size, seq_len - 1]
+        next_qt[next_qt == -1] = self.output_dim
+        one_hot_qt = F.embedding(next_qt, one_hot)  # [batch_size, seq_len - 1, output_dim]
+        # dot product between yt and one_hot_qt
+        pred = (yt * one_hot_qt).sum(dim=-1)  # [batch_size, seq_len - 1]
+        return pred
+
+    def forward(self, features, questions):
+        r"""
+        Parameters:
+            features: input one-hot matrix
+            questions: question index matrix
+        seq_len dimension needs padding, because different students may have learning sequences with different lengths.
+        Shape:
+            features: [batch_size, seq_len]
+            questions: [batch_size, seq_len]
+            pred_res: [batch_size, seq_len - 1]
+        Return:
+            pred_res: the correct probability of questions answered at the next timestamp
+            concept_embedding: input of VAE (optional)
+            rec_embedding: reconstructed input of VAE (optional)
+            z_prob: probability distribution of latent variable z in VAE (optional)
+        """
+        batch_size, seq_len = features.shape
+        # feature_dim = 2 * self.concept_num
+        features[features == -1] = self.feature_dim
+        feat_one_hot = torch.eye(self.feature_dim)
+        feat_one_hot = torch.cat((feat_one_hot, -1 * torch.ones(1, self.feature_dim)), dim=0)
+        features = F.embedding(features, feat_one_hot)
+
+        feature_lens = torch.ne(questions, -1).sum(dim=1)  # padding value = -1
+        x_packed = pack_padded_sequence(features, feature_lens, batch_first=True, enforce_sorted=False)
+        output_packed, _ = self.rnn(x_packed)  # [batch, seq_len, hidden_dim]
+        output_padded, output_lengths = pad_packed_sequence(output_packed, batch_first=True)  # [batch, seq_len, hidden_dim]
+        yt = self.f_out(output_padded)  # [batch, seq_len, output_dim]
+        yt = torch.sigmoid(yt)
+        yt = yt[:, :-1, :]  # [batch, seq_len - 1, output_dim]
+        pred_res = self._get_next_pred(yt, questions)  # [batch, seq_len - 1]
+        return pred_res
