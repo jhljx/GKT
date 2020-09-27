@@ -453,7 +453,9 @@ class DKT(nn.Module):
             if isinstance(m, nn.Linear):
                 nn.init.xavier_normal_(m.weight.data)
             elif isinstance(m, (nn.LSTM)):
-                nn.init.orthogonal(m.weight)
+                for i, weight in enumerate(m.parameters()):
+                    if i < 2:
+                        nn.init.orthogonal(weight)
 
     def _get_next_pred(self, yt, questions):
         r"""
