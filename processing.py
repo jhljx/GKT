@@ -14,12 +14,10 @@ from utils import build_dense_graph
 
 
 class KTDataset(Dataset):
-
     def __init__(self, features, questions, answers):
         self.features = features
         self.questions = questions
         self.answers = answers
-        # self.seq_len = seq_len
 
     def __getitem__(self, index):
         return self.features[index], self.questions[index], self.answers[index]
@@ -33,16 +31,13 @@ def pad_collate(batch):
     features = [torch.tensor(feat) for feat in features]
     questions = [torch.tensor(qt) for qt in questions]
     answers = [torch.tensor(ans) for ans in answers]
-    # features_len = [len(feat) for feat in features]
-    # questions_len = [len(qt) for qt in questions]
-    # answers_len = [len(ans) for ans in answers]
     feature_pad = pad_sequence(features, batch_first=True, padding_value=-1)
     question_pad = pad_sequence(questions, batch_first=True, padding_value=-1)
     answer_pad = pad_sequence(answers, batch_first=True, padding_value=-1)
     return feature_pad, question_pad, answer_pad
 
 
-def load_dataset(file_path, batch_size, graph_type, dkt_graph_path=None, train_ratio=0.7, val_ratio=0.2, shuffle=True, use_cuda=True):
+def load_dataset(file_path, batch_size, graph_type, dkt_graph_path=None, train_ratio=0.7, val_ratio=0.2, shuffle=True, model_type='GKT', use_cuda=True):
     r"""
     Parameters:
         file_path: input file path of knowledge tracing data
@@ -115,16 +110,16 @@ def load_dataset(file_path, batch_size, graph_type, dkt_graph_path=None, train_r
     valid_data_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=shuffle, collate_fn=pad_collate)
     test_data_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=shuffle, collate_fn=pad_collate)
 
-    if graph_type == 'Dense':
-        graph = build_dense_graph(concept_num)
-    elif graph_type == 'Transition':
-        graph = build_transition_graph(question_list, seq_len_list, student_num, concept_num)
-    elif graph_type == 'DKT':
-        graph = build_dkt_graph(dkt_graph_path, concept_num)
-    else:
-        graph = None
-    if use_cuda:
-        graph = graph.cuda()
+    graph = None
+    if model_type == 'GKT':
+        if graph_type == 'Dense':
+            graph = build_dense_graph(concept_num)
+        elif graph_type == 'Transition':
+            graph = build_transition_graph(question_list, seq_len_list, student_num, concept_num)
+        elif graph_type == 'DKT':
+            graph = build_dkt_graph(dkt_graph_path, concept_num)
+        if use_cuda:
+            graph = graph.cuda()
     return concept_num, graph, train_data_loader, valid_data_loader, test_data_loader
 
 
