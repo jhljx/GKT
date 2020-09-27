@@ -93,15 +93,16 @@ class EraseAddGate(nn.Module):
         return res
 
 
-class ScaledDotProductAttention(nn.Module):
+class Attention(nn.Module):
     """
-    Scaled Dot-Product Attention
+    Attention
     NOTE: Stole and modify from https://github.com/jadore801120/attention-is-all-you-need-pytorch/blob/master/transformer/Modules.py
+    We also refer to https://github.com/Diego999/pyGAT/blob/master/layers.py
     """
 
-    def __init__(self, temperature, attn_dropout=0.):
+    def __init__(self, alpha=0.2, attn_dropout=0.):
         super().__init__()
-        self.temperature = temperature
+        self.alpha = alpha
         self.dropout = attn_dropout
 
     def forward(self, q, k, mask=None):
@@ -115,7 +116,7 @@ class ScaledDotProductAttention(nn.Module):
             k: [n_head, concept_num, embedding_dim]
         Return: attention score of all queries
         """
-        attn = torch.matmul(q / self.temperature, k.transpose(1, 2))
+        attn = F.leaky_relu(torch.matmul(q, k.transpose(1, 2)), negative_slope=self.alpha)
         if mask is not None:
             attn = attn.masked_fill(mask == 0, -1e9)
         attn = F.dropout(F.softmax(attn, dim=-1), p=self.dropout)
