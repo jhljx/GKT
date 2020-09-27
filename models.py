@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from torch.autograd import Variable
-from layers import MLP, EraseAddGate, MLPEncoder, MLPDecoder, Attention
+from layers import MLP, EraseAddGate, MLPEncoder, MLPDecoder, ScaledDotProductAttention
 from utils import gumbel_softmax
 
 # Graph-based Knowledge Tracing: Modeling Student Proficiency Using Graph Neural Network.
@@ -40,7 +40,7 @@ class GKT(nn.Module):
 
         # one-hot feature and question
         self.one_hot_feat = torch.eye(2 * self.concept_num)
-        self.one_hot_q = torch.eye(self.concept_nume)
+        self.one_hot_q = torch.eye(self.concept_num)
         self.one_hot_q = torch.cat((self.one_hot_q, torch.zeros(1, self.concept_num)), dim=0)
         # concept and concept & response embeddings
         self.emb_x = nn.Embedding(2 * concept_num, embedding_dim)
@@ -313,7 +313,7 @@ class MultiHeadAttention(nn.Module):
         self.d_k = d_k
         self.w_qs = nn.Linear(input_dim, n_head * d_k, bias=False)
         self.w_ks = nn.Linear(input_dim, n_head * d_k, bias=False)
-        self.attention = Attention(attn_dropout=dropout)
+        self.attention = ScaledDotProductAttention(temperature=d_k ** 0.5, attn_dropout=dropout)
         # inferred latent graph, used for saving and visualization
         self.graphs = torch.zeros(n_head, concept_num, concept_num)
 
@@ -431,8 +431,17 @@ class DKT(nn.Module):
         self.feature_dim = feature_dim
         self.hidden_dim = hidden_dim
         self.output_dim = output_dim
+        self.bias = bias
         self.rnn = nn.LSTM(feature_dim, hidden_dim, bias=bias, dropout=dropout, batch_first=True)
         self.f_out = nn.Linear(hidden_dim, output_dim, bias=bias)
+        self.init_weights()
+
+    def init_weights(self):
+        for m in self.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.xavier_normal_(m.weight.data)
+            elif isinstance(m, (nn.LSTM)):
+                nn.init.orthogonal(m.weight)
 
     def _get_next_pred(self, yt, questions):
         r"""
