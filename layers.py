@@ -22,15 +22,13 @@ class MLP(nn.Module):
         # the paper said they added Batch Normalization for the output of MLPs, as shown in Section 4.2
         self.dropout = dropout
         self.output_dim = output_dim
-        self.bias  = bias
         self.init_weights()
 
     def init_weights(self):
         for m in self.modules():
             if isinstance(m, nn.Linear):
                 nn.init.xavier_normal_(m.weight.data)
-                if self.bias:
-                    m.bias.data.fill_(0.1)
+                m.bias.data.fill_(0.1)
             elif isinstance(m, nn.BatchNorm1d):
                 m.weight.data.fill_(1)
                 m.bias.data.zero_()
@@ -117,7 +115,7 @@ class ScaledDotProductAttention(nn.Module):
             k: [n_head, concept_num, embedding_dim]
         Return: attention score of all queries
         """
-        attn = torch.matmul(q / self.temperature, k.transpose(1, 2))
+        attn = torch.matmul(q / self.temperature, k.transpose(1, 2))  # [n_head, mask_number, concept_num]
         if mask is not None:
             attn = attn.masked_fill(mask == 0, -1e9)
         attn = F.dropout(F.softmax(attn, dim=-1), p=self.dropout)
