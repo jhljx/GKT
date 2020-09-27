@@ -455,7 +455,7 @@ class DKT(nn.Module):
             elif isinstance(m, (nn.LSTM)):
                 for i, weight in enumerate(m.parameters()):
                     if i < 2:
-                        nn.init.orthogonal(weight)
+                        nn.init.orthogonal_(weight)
 
     def _get_next_pred(self, yt, questions):
         r"""
