@@ -28,7 +28,8 @@ class MLP(nn.Module):
         for m in self.modules():
             if isinstance(m, nn.Linear):
                 nn.init.xavier_normal_(m.weight.data)
-                m.bias.data.fill_(0.1)
+                if self.bias:
+                    m.bias.data.fill_(0.1)
             elif isinstance(m, nn.BatchNorm1d):
                 m.weight.data.fill_(1)
                 m.bias.data.zero_()
@@ -63,15 +64,20 @@ class EraseAddGate(nn.Module):
         super(EraseAddGate, self).__init__()
         # weight
         self.weight = nn.Parameter(torch.rand(concept_num))
-        self.reset_parameters()
         # erase gate
         self.erase = nn.Linear(feature_dim, feature_dim, bias=bias)
         # add gate
         self.add = nn.Linear(feature_dim, feature_dim, bias=bias)
+        self.reset_parameters()
 
     def reset_parameters(self):
         stdv = 1. / math.sqrt(self.weight.size(0))
         self.weight.data.uniform_(-stdv, stdv)
+        for m in self.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.xavier_normal_(m.weight.data)
+                if self.bias:
+                    m.bias.data.fill_(0.1)
 
     def forward(self, x):
         r"""
