@@ -8,7 +8,7 @@ import torch
 import torch.optim as optim
 from torch.optim import lr_scheduler
 from torch.autograd import Variable
-from models import GKT, MultiHeadAttention, VAE
+from models import GKT, MultiHeadAttention, VAE, DKT
 from metrics import KTLoss, VAELoss
 from processing import load_dataset
 
@@ -28,13 +28,14 @@ parser.add_argument('-graph-save-dir', type=str, default='graphs', help='Dir for
 parser.add_argument('--load-dir', type=str, default='', help='Where to load the trained model if finetunning. ' + 'Leave empty to train from scratch')
 parser.add_argument('--dkt-graph-dir', type=str, default='dkt-graph', help='Where to load the pretrained dkt graph.')
 parser.add_argument('--dkt-graph', type=str, default='dkt_graph.txt', help='DKT graph data file name.')
+parser.add_argument('--model', type=str, default='GKT', help='Model type to use, support GKT and DKT.')
 parser.add_argument('--hid-dim', type=int, default=32, help='Dimension of hidden knowledge states.')
 parser.add_argument('--emb-dim', type=int, default=32, help='Dimension of concept embedding.')
 parser.add_argument('--attn-dim', type=int, default=32, help='Dimension of multi-head attention layers.')
 parser.add_argument('--vae-encoder-dim', type=int, default=32, help='Dimension of hidden layers in vae encoder.')
 parser.add_argument('--vae-decoder-dim', type=int, default=32, help='Dimension of hidden layers in vae decoder.')
 parser.add_argument('--edge-types', type=int, default=2, help='The number of edge types to infer.')
-parser.add_argument('--graph-type', type=str, default='MHA', help='The type of latent concept graph.')
+parser.add_argument('--graph-type', type=str, default='Dense', help='The type of latent concept graph.')
 parser.add_argument('--dropout', type=float, default=0.5, help='Dropout rate (1 - keep probability).')
 parser.add_argument('--bias', type=bool, default=True, help='Whether to add bias for neural network layers.')
 parser.add_argument('--temp', type=float, default=0.5, help='Temperature for Gumbel softmax.')
@@ -70,11 +71,17 @@ if args.save_dir:
     now = datetime.datetime.now()
     # timestamp = now.isoformat()
     timestamp = now.strftime('%Y-%m-%d %H-%M-%S')
-    save_dir = '{}/exp{}/'.format(args.save_dir, timestamp)
+    if args.model == 'DKT':
+        model_file_name = 'DKT'
+    elif args.model == 'GKT':
+        model_file_name = 'GKT' + '-' + args.graph_type
+    else:
+        raise NotImplementedError(args.model + ' model is not implemented!')
+    save_dir = '{}/exp{}/'.format(args.save_dir, model_file_name + timestamp)
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
     meta_file = os.path.join(save_dir, 'metadata.pkl')
-    gkt_file = os.path.join(save_dir, 'gkt.pt')
+    model_file = os.path.join(save_dir, model_file_name + '.pt')
     log_file = os.path.join(save_dir, 'log.txt')
     log = open(log_file, 'w')
     pickle.dump({'args': args}, open(meta_file, "wb"))
@@ -86,39 +93,46 @@ dataset_path = os.path.join(args.data_dir, args.data_file)
 dkt_graph_path = os.path.join(args.dkt_graph_dir, args.dkt_graph)
 if not os.path.exists(dkt_graph_path):
     dkt_graph_path = None
-concept_num, graph, train_loader, valid_loader, test_loader = load_dataset(dataset_path, args.batch_size, args.graph_type,
-                                                                           dkt_graph_path = dkt_graph_path,
-                                                                           train_ratio=args.train_ratio,
-                                                                           val_ratio=args.val_ratio,
-                                                                           shuffle=args.shuffle, use_cuda=args.cuda)
-
+concept_num, graph, train_loader, valid_loader, test_loader = load_dataset(dataset_path, args.batch_size, args.graph_type, dkt_graph_path=dkt_graph_path,
+                                                                           train_ratio=args.train_ratio, val_ratio=args.val_ratio, shuffle=args.shuffle,
+                                                                           model_type=args.model, use_cuda=args.cuda)
 
 # build models
-graph_model = None  # if args.graph_type in : ['Dense', 'Transition', 'DKT', 'PAM']
-if args.graph_type == 'MHA':
-    graph_model = MultiHeadAttention(args.edge_types, concept_num, args.emb_dim, args.attn_dim, dropout=args.dropout)
-elif args.graph_type == 'VAE':
-    graph_model = VAE(args.emb_dim, args.vae_encoder_dim, args.edge_types, args.vae_decoder_dim, args.vae_decoder_dim, concept_num,
-                      edge_type_num=args.edge_types, tau=args.temp, factor=args.factor, dropout=args.dropout, bias=args.bias)
-    vae_loss = VAELoss(concept_num, edge_type_num=args.edge_types, prior=args.prior, var=args.var)
-    if args.cuda:
-        vae_loss = vae_loss.cuda()
-gkt = GKT(concept_num, args.hid_dim, args.emb_dim, args.edge_types, args.graph_type, graph=graph, graph_model=graph_model,
-          dropout=args.dropout, bias=args.bias)
+if args.model == 'GKT':
+    graph_model = None  # if args.graph_type in : ['Dense', 'Transition', 'DKT', 'PAM']
+    if args.graph_type == 'MHA':
+        graph_model = MultiHeadAttention(args.edge_types, concept_num, args.emb_dim, args.attn_dim, dropout=args.dropout)
+    elif args.graph_type == 'VAE':
+        graph_model = VAE(args.emb_dim, args.vae_encoder_dim, args.edge_types, args.vae_decoder_dim, args.vae_decoder_dim, concept_num,
+                          edge_type_num=args.edge_types, tau=args.temp, factor=args.factor, dropout=args.dropout, bias=args.bias)
+        vae_loss = VAELoss(concept_num, edge_type_num=args.edge_types, prior=args.prior, var=args.var)
+        if args.cuda:
+            vae_loss = vae_loss.cuda()
+    model = GKT(concept_num, args.hid_dim, args.emb_dim, args.edge_types, args.graph_type, graph=graph, graph_model=graph_model,
+              dropout=args.dropout, bias=args.bias)
+elif args.model == 'DKT':
+    model = DKT(2 * concept_num, args.emb_dim, concept_num, bias=args.bias)
+else:
+    raise NotImplementedError(args.model + ' model is not implemented!')
 
 kt_loss = KTLoss()
 
-
 if args.load_dir:
-    gkt_file = os.path.join(args.load_dir, 'gkt.pt')
-    gkt.load_state_dict(torch.load(gkt_file))
+    if args.model == 'DKT':
+        model_file_name = 'DKT'
+    elif args.model == 'GKT':
+        model_file_name = 'GKT' + '-' + args.graph_type
+    else:
+        raise NotImplementedError(args.model + ' model is not implemented!')
+    model_file = os.path.join(args.load_dir, model_file_name + '.pt')
+    model.load_state_dict(torch.load(model_file))
     args.save_dir = False
 
 # build optimizer
-optimizer = optim.Adam(gkt.parameters(), lr=args.lr)
+optimizer = optim.Adam(model.parameters(), lr=args.lr)
 scheduler = lr_scheduler.StepLR(optimizer, step_size=args.lr_decay, gamma=args.gamma)
 
-if args.prior:
+if args.model == 'GKT' and args.prior:
     prior = np.array([0.91, 0.03, 0.03, 0.03])  # TODO: hard coded for now
     print("Using prior")
     print(prior)
@@ -126,12 +140,11 @@ if args.prior:
     log_prior = torch.unsqueeze(log_prior, 0)
     log_prior = torch.unsqueeze(log_prior, 0)
     log_prior = Variable(log_prior)
-
     if args.cuda:
         log_prior = log_prior.cuda()
 
 if args.cuda:
-    gkt = gkt.cuda()
+    model = model.cuda()
     kt_loss = KTLoss()
 
 
@@ -142,21 +155,28 @@ def train(epoch, best_val_loss):
     vae_train = []
     auc_train = []
     acc_train = []
+    model.train()
 
     for batch_idx, (features, questions, answers) in enumerate(train_loader):
         t1 = time.time()
         if args.cuda:
             features, questions, answers = features.cuda(), questions.cuda(), answers.cuda()
         optimizer.zero_grad()
+        ec_list, rec_list, z_prob_list = None, None, None
         questions = questions.long()
-        pred_res, ec_list, rec_list, z_prob_list = gkt(features, questions)
+        if args.model == 'GKT':
+            pred_res, ec_list, rec_list, z_prob_list = model(features, questions)
+        elif args.model == 'DKT':
+            pred_res = model(features, questions)
+        else:
+            raise NotImplementedError(args.model + ' model is not implemented!')
         loss_kt, auc, acc = kt_loss(pred_res, answers)
         kt_train.append(loss_kt.item())
         if auc != -1 and acc != -1:
             auc_train.append(auc)
             acc_train.append(acc)
 
-        if args.graph_type == 'VAE':
+        if args.model == 'GKT' and args.graph_type == 'VAE':
             if args.prior:
                 loss_vae = vae_loss(ec_list, rec_list, z_prob_list, log_prior=log_prior)
             else:
@@ -179,12 +199,18 @@ def train(epoch, best_val_loss):
     auc_val = []
     acc_val = []
 
-    gkt.eval()
+    model.eval()
     for batch_idx, (features, questions, answers) in enumerate(valid_loader):
         if args.cuda:
             features, questions, answers = features.cuda(), questions.cuda(), answers.cuda()
+        ec_list, rec_list, z_prob_list = None, None, None
         questions = questions.long()
-        pred_res, ec_list, rec_list, z_prob_list = gkt(features, questions)
+        if args.model == 'GKT':
+            pred_res, ec_list, rec_list, z_prob_list = model(features, questions)
+        elif args.model == 'DKT':
+            pred_res = model(features, questions)
+        else:
+            raise NotImplementedError(args.model + ' model is not implemented!')
         loss_kt, auc, acc = kt_loss(pred_res, answers)
         kt_val.append(loss_kt.item())
         if auc != -1 and acc != -1:
@@ -192,13 +218,13 @@ def train(epoch, best_val_loss):
             acc_val.append(acc.item())
 
         loss = loss_kt
-        if args.graph_type == 'VAE':
+        if args.model == 'GKT' and args.graph_type == 'VAE':
             loss_vae = vae_loss(ec_list, rec_list, z_prob_list)
             vae_val.append(loss_vae.item())
             loss = loss_kt + loss_vae
         loss_val.append(loss.item())
 
-    if args.graph_type == 'VAE':
+    if args.model == 'GKT' and args.graph_type == 'VAE':
         print('Epoch: {:04d}'.format(epoch),
               'loss_train: {:.10f}'.format(np.mean(loss_train)),
               'kt_train: {:.10f}'.format(np.mean(kt_train)),
@@ -222,8 +248,8 @@ def train(epoch, best_val_loss):
               'time: {:.4f}s'.format(time.time() - t))
     if args.save_dir and np.mean(loss_val) < best_val_loss:
         print('Best model so far, saving...')
-        torch.save(gkt.state_dict(), gkt_file)
-        if args.graph_type == 'VAE':
+        torch.save(model.state_dict(), model_file)
+        if args.model == 'GKT' and args.graph_type == 'VAE':
             print('Epoch: {:04d}'.format(epoch),
                   'loss_train: {:.10f}'.format(np.mean(loss_train)),
                   'kt_train: {:.10f}'.format(np.mean(kt_train)),
@@ -256,13 +282,19 @@ def test():
     auc_test = []
     acc_test = []
 
-    gkt.eval()
-    gkt.load_state_dict(torch.load(gkt_file))
+    model.eval()
+    model.load_state_dict(torch.load(model_file))
     for batch_idx, (features, questions, answers) in enumerate(test_loader):
         if args.cuda:
             features, questions, answers = features.cuda(), questions.cuda(), answers.cuda()
+        ec_list, rec_list, z_prob_list = None, None, None
         questions = questions.long()
-        pred_res, ec_list, rec_list, z_prob_list = gkt(features, questions)
+        if args.model == 'GKT':
+            pred_res, ec_list, rec_list, z_prob_list = model(features, questions)
+        elif args.model == 'DKT':
+            pred_res = model(features, questions)
+        else:
+            raise NotImplementedError(args.model + ' model is not implemented!')
         loss_kt, auc, acc = kt_loss(pred_res, answers)
         if auc != -1 and acc != -1:
             auc_test.append(auc)
@@ -270,7 +302,7 @@ def test():
 
         kt_test.append(loss_kt.item())
         loss = loss_kt
-        if args.graph_type == 'VAE':
+        if args.model == 'GKT' and args.graph_type == 'VAE':
             loss_vae = vae_loss(ec_list, rec_list, z_prob_list)
             vae_test.append(loss_vae.item())
             loss = loss_kt + loss_vae
@@ -279,7 +311,7 @@ def test():
     print('--------------------------------')
     print('--------Testing-----------------')
     print('--------------------------------')
-    if args.graph_type == 'VAE':
+    if args.model == 'GKT' and args.graph_type == 'VAE':
         print('loss_test: {:.10f}'.format(np.mean(loss_test)),
               'kt_test: {:.10f}'.format(np.mean(kt_test)),
               'vae_test: {:.10f}'.format(np.mean(vae_test)),
@@ -293,7 +325,7 @@ def test():
         print('--------------------------------', file=log)
         print('--------Testing-----------------', file=log)
         print('--------------------------------', file=log)
-        if args.graph_type == 'VAE':
+        if args.model == 'GKT' and args.graph_type == 'VAE':
             print('loss_test: {:.10f}'.format(np.mean(loss_test)),
                   'kt_test: {:.10f}'.format(np.mean(kt_test)),
                   'vae_test: {:.10f}'.format(np.mean(vae_test)),
