@@ -111,7 +111,7 @@ if args.model == 'GKT':
     model = GKT(concept_num, args.hid_dim, args.emb_dim, args.edge_types, args.graph_type, graph=graph, graph_model=graph_model,
               dropout=args.dropout, bias=args.bias)
 elif args.model == 'DKT':
-    model = DKT(2 * concept_num, args.emb_dim, concept_num, bias=args.bias)
+    model = DKT(2 * concept_num, args.emb_dim, concept_num, dropout=args.dropout, bias=args.bias)
 else:
     raise NotImplementedError(args.model + ' model is not implemented!')
 
