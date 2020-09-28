@@ -31,7 +31,7 @@ parser.add_argument('--dkt-graph', type=str, default='dkt_graph.txt', help='DKT 
 parser.add_argument('--model', type=str, default='GKT', help='Model type to use, support GKT and DKT.')
 parser.add_argument('--hid-dim', type=int, default=32, help='Dimension of hidden knowledge states.')
 parser.add_argument('--emb-dim', type=int, default=32, help='Dimension of concept embedding.')
-parser.add_argument('--attn-dim', type=int, default=32, help='Dimension of multi-head attention layers.')
+parser.add_argument('--attn-dim', type=int, default=64, help='Dimension of multi-head attention layers.')
 parser.add_argument('--vae-encoder-dim', type=int, default=32, help='Dimension of hidden layers in vae encoder.')
 parser.add_argument('--vae-decoder-dim', type=int, default=32, help='Dimension of hidden layers in vae decoder.')
 parser.add_argument('--edge-types', type=int, default=2, help='The number of edge types to infer.')
