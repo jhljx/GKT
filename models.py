@@ -137,12 +137,8 @@ class GKT(nn.Module):
                 query = self.emb_c(masked_qt)
                 key = concept_embedding
                 att_mask = Variable(torch.ones(self.edge_type_num, mask_num, self.concept_num, device=qt.device))
-                # print('edge_type_number: ', self.edge_type_num)
                 for k in range(self.edge_type_num):
                     index_tuple = (torch.arange(mask_num, device=qt.device), masked_qt.long())
-                    # tmp_mask = att_mask[k]
-                    #print('tmp_mask shape: ', tmp_mask.shape)
-                    # print('mask_number: ', mask_num)
                     att_mask[k] = att_mask[k].index_put(index_tuple, torch.zeros(mask_num, device=qt.device))
                 graphs = self.graph_model(masked_qt, query, key, att_mask)
             else:  # self.graph_type == 'VAE'
@@ -324,12 +320,6 @@ class MultiHeadAttention(nn.Module):
         self.attention = ScaledDotProductAttention(temperature=d_k ** 0.5, attn_dropout=dropout)
         # inferred latent graph, used for saving and visualization
         self.graphs = torch.zeros(n_head, concept_num, concept_num)
-        self.init_weights()
-
-    def init_weights(self):
-        for m in self.modules():
-            if isinstance(m, nn.Linear):
-                nn.init.xavier_normal_(m.weight.data)
 
     def _get_graph(self, attn_score, qt):
         r"""
