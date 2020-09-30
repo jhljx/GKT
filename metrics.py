@@ -38,6 +38,7 @@ class KTLoss(nn.Module):
             output = torch.cat((pred_zero[answer_mask].reshape(-1, 1), pred_one[answer_mask].reshape(-1, 1)), dim=1)
             label = real_answers[answer_mask].reshape(-1, 1)
             acc = accuracy(output, label)
+            acc = float(acc.cpu().detach().numpy())
         except ValueError as e:
             auc, acc = -1, -1
 
