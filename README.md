@@ -11,7 +11,7 @@ To run this code you need the following:
 
 - a machine with GPUs
 - python3
-- numpy, pandas, scipy and torch packages:
+- numpy, pandas, scipy, sklearn and torch packages:
 ```
 pip3 install numpy pandas scipy sklearn torch
 ```
