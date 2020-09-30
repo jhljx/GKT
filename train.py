@@ -88,6 +88,8 @@ if args.save_dir:
         os.makedirs(save_dir)
     meta_file = os.path.join(save_dir, 'metadata.pkl')
     model_file = os.path.join(save_dir, model_file_name + '.pt')
+    optimizer_file = os.path.join(save_dir, model_file_name + '-Optimizer.pt')
+    scheduler_file = os.path.join(save_dir, model_file_name + '-Scheduler.pt')
     log_file = os.path.join(save_dir, 'log.txt')
     log = open(log_file, 'w')
     pickle.dump({'args': args}, open(meta_file, "wb"))
@@ -122,9 +124,13 @@ elif args.model == 'DKT':
     model = DKT(2 * concept_num, args.emb_dim, concept_num, dropout=args.dropout, bias=args.bias)
 else:
     raise NotImplementedError(args.model + ' model is not implemented!')
-
 kt_loss = KTLoss()
 
+# build optimizer
+optimizer = optim.Adam(model.parameters(), lr=args.lr)
+scheduler = lr_scheduler.StepLR(optimizer, step_size=args.lr_decay, gamma=args.gamma)
+
+# load model/optimizer/scheduler params
 if args.load_dir:
     if args.model == 'DKT':
         model_file_name = 'DKT'
@@ -133,12 +139,12 @@ if args.load_dir:
     else:
         raise NotImplementedError(args.model + ' model is not implemented!')
     model_file = os.path.join(args.load_dir, model_file_name + '.pt')
+    optimizer_file = os.path.join(save_dir, model_file_name + '-Optimizer.pt')
+    scheduler_file = os.path.join(save_dir, model_file_name + '-Scheduler.pt')
     model.load_state_dict(torch.load(model_file))
+    optimizer.load_state_dict(torch.load(optimizer_file))
+    scheduler.load_state_dict(torch.load(scheduler_file))
     args.save_dir = False
-
-# build optimizer
-optimizer = optim.Adam(model.parameters(), lr=args.lr)
-scheduler = lr_scheduler.StepLR(optimizer, step_size=args.lr_decay, gamma=args.gamma)
 
 if args.model == 'GKT' and args.prior:
     prior = np.array([0.91, 0.03, 0.03, 0.03])  # TODO: hard coded for now
@@ -262,6 +268,8 @@ def train(epoch, best_val_loss):
     if args.save_dir and np.mean(loss_val) < best_val_loss:
         print('Best model so far, saving...')
         torch.save(model.state_dict(), model_file)
+        torch.save(optimizer.state_dict(), optimizer_file)
+        torch.save(scheduler.state_dict(), scheduler_file)
         if args.model == 'GKT' and args.graph_type == 'VAE':
             print('Epoch: {:04d}'.format(epoch),
                   'loss_train: {:.10f}'.format(np.mean(loss_train)),
