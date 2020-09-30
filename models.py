@@ -28,14 +28,18 @@ class GKT(nn.Module):
         self.graph_type = graph_type
         if graph_type in ['Dense', 'Transition', 'DKT']:
             assert edge_type_num == 2
-            assert graph is not None
-            self.graph = graph  # [concept_num, concept_num]
+            assert graph is not None and graph_model is None
+            self.graph = nn.Parameter(graph)  # [concept_num, concept_num]
+            self.graph.requires_grad = False  # fix parameter
             self.graph_model = graph_model
         else:  # ['PAM', 'MHA', 'VAE']
             assert graph is None
             self.graph = graph  # None
             if graph_type == 'PAM':
+                assert graph_model is None
                 self.graph = nn.Parameter(torch.rand(concept_num, concept_num))
+            else:
+                assert graph_model is not None
             self.graph_model = graph_model
 
         # one-hot feature and question
@@ -142,8 +146,8 @@ class GKT(nn.Module):
                     att_mask[k] = att_mask[k].index_put(index_tuple, torch.zeros(mask_num, device=qt.device))
                 graphs = self.graph_model(masked_qt, query, key, att_mask)
             else:  # self.graph_type == 'VAE'
-                rel_send, rel_rec = self._get_edges(masked_qt)
-                graphs, rec_embedding, z_prob = self.graph_model(concept_embedding, rel_send, rel_rec)
+                sp_send, sp_rec, sp_send_t, sp_rec_t = self._get_edges(masked_qt)
+                graphs, rec_embedding, z_prob = self.graph_model(concept_embedding, sp_send, sp_rec, sp_send_t, sp_rec_t)
             neigh_features = 0
             for k in range(self.edge_type_num):
                 adj = graphs[k][masked_qt, :].unsqueeze(dim=-1)  # [mask_num, concept_num, 1]
@@ -258,11 +262,15 @@ class GKT(nn.Module):
         row_tensor = torch.from_numpy(row_arr).long()
         col_tensor = torch.from_numpy(col_arr).long()
         one_hot_table = torch.eye(self.concept_num, self.concept_num)
-        rel_rec = F.embedding(row_tensor, one_hot_table)  # [edge_num, concept_num]
-        rel_send = F.embedding(col_tensor, one_hot_table)  # [edge_num, concept_num]
-        rel_send = rel_send.to(device=masked_qt.device)
-        rel_rec = rel_rec.to(device=masked_qt.device)
-        return rel_send, rel_rec
+        rel_send = F.embedding(row_tensor, one_hot_table)  # [edge_num, concept_num]
+        rel_rec = F.embedding(col_tensor, one_hot_table)  # [edge_num, concept_num]
+        sp_rec, sp_send = rel_rec.to_sparse(), rel_send.to_sparse()
+        sp_rec_t, sp_send_t = rel_rec.T.to_sparse(), rel_send.T.to_sparse()
+        sp_send = sp_send.to(device=masked_qt.device)
+        sp_rec = sp_rec.to(device=masked_qt.device)
+        sp_send_t = sp_send_t.to(device=masked_qt.device)
+        sp_rec_t = sp_rec_t.to(device=masked_qt.device)
+        return sp_send, sp_rec, sp_send_t, sp_rec_t
 
     def forward(self, features, questions):
         r"""
@@ -319,7 +327,8 @@ class MultiHeadAttention(nn.Module):
         self.w_ks = nn.Linear(input_dim, n_head * d_k, bias=False)
         self.attention = ScaledDotProductAttention(temperature=d_k ** 0.5, attn_dropout=dropout)
         # inferred latent graph, used for saving and visualization
-        self.graphs = torch.zeros(n_head, concept_num, concept_num)
+        self.graphs = nn.Parameter(torch.zeros(n_head, concept_num, concept_num))
+        self.graphs.requires_grad = False
 
     def _get_graph(self, attn_score, qt):
         r"""
@@ -336,7 +345,10 @@ class MultiHeadAttention(nn.Module):
         for k in range(self.n_head):
             index_tuple = (qt.long(), )
             graphs[k] = graphs[k].index_put(index_tuple, attn_score[k])  # used for calculation
-            self.graphs[k] = self.graphs[k].index_put(index_tuple, attn_score[k])  # used for saving and visualization
+            #############################
+            # here, we need to detach edges when storing it into self.graphs in case memory leak!
+            self.graphs.data[k] = self.graphs.data[k].index_put(index_tuple, attn_score[k].detach())  # used for saving and visualization
+            #############################
         return graphs
 
     def forward(self, qt, query, key, mask=None):
@@ -379,50 +391,58 @@ class VAE(nn.Module):
         self.encoder = MLPEncoder(input_dim, hidden_dim, output_dim, factor=factor, dropout=dropout, bias=bias)
         self.decoder = MLPDecoder(input_dim, msg_hidden_dim, msg_output_dim, hidden_dim, edge_type_num, dropout=dropout, bias=bias)
         # inferred latent graph, used for saving and visualization
-        self.graphs = torch.zeros(edge_type_num, concept_num, concept_num)
+        self.graphs = nn.Parameter(torch.zeros(edge_type_num, concept_num, concept_num))
+        self.graphs.requires_grad = False
 
-    def _get_graph(self, edges, rel_rec, rel_send):
+    def _get_graph(self, edges, sp_rec, sp_send):
         r"""
         Parameters:
             edges: sampled latent graph edge weights from the probability distribution of the latent variable z
-            rel_rec: one-hot encoded receive-node index
-            rel_send: one-hot encoded send-node index
+            sp_rec: one-hot encoded receive-node index(sparse tensor)
+            sp_send: one-hot encoded send-node index(sparse tensor)
         Shape:
             edges: [edge_num, edge_type_num]
-            rel_rec: [edge_num, concept_num]
-            rel_send: [edge_num, concept_num]
+            sp_rec: [edge_num, concept_num]
+            sp_send: [edge_num, concept_num]
         Return:
             graphs: latent graph list modeled by z which has different edge types
         """
-        x_index = torch.where(rel_send)[1].long()  # send node index: [edge_num, ]
-        y_index = torch.where(rel_rec)[1].long()   # receive node index [edge_num, ]
+        x_index = sp_send._indices()[1].long()  # send node index: [edge_num, ]
+        y_index = sp_rec._indices()[1].long()   # receive node index [edge_num, ]
         graphs = Variable(torch.zeros(self.edge_type_num, self.concept_num, self.concept_num))
         for k in range(self.edge_type_num):
             index_tuple = (x_index, y_index)
             graphs[k] = graphs[k].index_put(index_tuple, edges[:, k])  # used for calculation
-            self.graphs[k] = self.graphs[k].index_put(index_tuple, edges[:, k])  # used for saving and visualization
+            #############################
+            # here, we need to detach edges when storing it into self.graphs in case memory leak!
+            self.graphs.data[k] = self.graphs.data[k].index_put(index_tuple, edges[:, k].detach())  # used for saving and visualization
+            #############################
         return graphs
 
-    def forward(self, data, rel_send, rel_rec):
+    def forward(self, data, sp_send, sp_rec, sp_send_t, sp_rec_t):
         r"""
         Parameters:
             data: input concept embedding matrix
-            rel_send: one-hot encoded send-node index
-            rel_rec: one-hot encoded receive-node index
+            sp_send: one-hot encoded send-node index(sparse tensor)
+            sp_rec: one-hot encoded receive-node index(sparse tensor)
+            sp_send_t: one-hot encoded send-node index(sparse tensor, transpose)
+            sp_rec_t: one-hot encoded receive-node index(sparse tensor, transpose)
         Shape:
             data: [concept_num, embedding_dim]
-            rel_send: [edge_num, concept_num]
-            rel_rec: [edge_num, concept_num]
+            sp_send: [edge_num, concept_num]
+            sp_rec: [edge_num, concept_num]
+            sp_send_t: [concept_num, edge_num]
+            sp_rec_t: [concept_num, edge_num]
         Return:
             graphs: latent graph list modeled by z which has different edge types
             output: the reconstructed data
             prob: q(z|x) distribution
         """
-        logits = self.encoder(data, rel_rec, rel_send)  # [edge_num, output_dim(edge_type_num)]
+        logits = self.encoder(data, sp_send, sp_rec, sp_send_t, sp_rec_t)  # [edge_num, output_dim(edge_type_num)]
         edges = gumbel_softmax(logits, tau=self.tau, dim=-1)  # [edge_num, edge_type_num]
         prob = F.softmax(logits, dim=-1)
-        output = self.decoder(data, edges, rel_rec, rel_send)  # [concept_num, embedding_dim]
-        graphs = self._get_graph(edges, rel_rec, rel_send)
+        output = self.decoder(data, edges, sp_send, sp_rec, sp_send_t, sp_rec_t)  # [concept_num, embedding_dim]
+        graphs = self._get_graph(edges, sp_send, sp_rec)
         return graphs, output, prob
 
 
