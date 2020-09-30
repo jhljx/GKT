@@ -46,7 +46,7 @@ class MLP(nn.Module):
 
     def forward(self, inputs):
         x = F.relu(self.fc1(inputs))
-        x = F.dropout(x, self.dropout, training=self.training)
+        x = F.dropout(x, self.dropout, training=self.training)  # pay attention to add training=self.training
         x = F.relu(self.fc2(x))
         return self.batch_norm(x)
 
@@ -118,7 +118,8 @@ class ScaledDotProductAttention(nn.Module):
         attn = torch.matmul(q / self.temperature, k.transpose(1, 2))  # [n_head, mask_number, concept_num]
         if mask is not None:
             attn = attn.masked_fill(mask == 0, -1e9)
-        attn = F.dropout(F.softmax(attn, dim=0), p=self.dropout)  # pay attention that dim=-1 is not as good as dim=0!
+        # pay attention to add training=self.training!
+        attn = F.dropout(F.softmax(attn, dim=0), self.dropout, training=self.training)  # pay attention that dim=-1 is not as good as dim=0!
         return attn
 
 
@@ -245,7 +246,7 @@ class MLPDecoder(nn.Module):
         all_msgs = Variable(torch.zeros(pre_msg.size(0), self.msg_out_dim, device=inputs.device))  # [edge_num, msg_out_dim]
         for i in range(self.edge_type_num):
             msg = F.relu(self.msg_fc1[i](pre_msg))
-            msg = F.dropout(msg, p=self.dropout)
+            msg = F.dropout(msg, self.dropout, training=self.training)
             msg = F.relu(self.msg_fc2[i](msg))
             msg = msg * rel_type[:, i:i + 1]
             all_msgs += msg
@@ -253,7 +254,7 @@ class MLPDecoder(nn.Module):
         # Aggregate all msgs to receiver
         agg_msgs = self.edge2node(all_msgs, sp_send_t, sp_rec_t)  # [concept_num, msg_out_dim]
         # Output MLP
-        pred = F.dropout(F.relu(self.out_fc1(agg_msgs)), p=self.dropout)  # [concept_num, hidden_dim]
-        pred = F.dropout(F.relu(self.out_fc2(pred)), p=self.dropout)  # [concept_num, hidden_dim]
+        pred = F.dropout(F.relu(self.out_fc1(agg_msgs)), self.dropout, training=self.training)  # [concept_num, hidden_dim]
+        pred = F.dropout(F.relu(self.out_fc2(pred)), self.dropout, training=self.training)  # [concept_num, hidden_dim]
         pred = self.out_fc3(pred)  # [concept_num, embedding_dim]
         return pred
