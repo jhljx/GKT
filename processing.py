@@ -15,6 +15,7 @@ from utils import build_dense_graph
 
 class KTDataset(Dataset):
     def __init__(self, features, questions, answers):
+        super(KTDataset, self).__init__()
         self.features = features
         self.questions = questions
         self.answers = answers
@@ -28,9 +29,9 @@ class KTDataset(Dataset):
 
 def pad_collate(batch):
     (features, questions, answers) = zip(*batch)
-    features = [torch.tensor(feat) for feat in features]
-    questions = [torch.tensor(qt) for qt in questions]
-    answers = [torch.tensor(ans) for ans in answers]
+    features = [torch.LongTensor(feat) for feat in features]
+    questions = [torch.LongTensor(qt) for qt in questions]
+    answers = [torch.LongTensor(ans) for ans in answers]
     feature_pad = pad_sequence(features, batch_first=True, padding_value=-1)
     question_pad = pad_sequence(questions, batch_first=True, padding_value=-1)
     answer_pad = pad_sequence(answers, batch_first=True, padding_value=-1)
