@@ -118,7 +118,7 @@ class ScaledDotProductAttention(nn.Module):
         attn = torch.matmul(q / self.temperature, k.transpose(1, 2))  # [n_head, mask_number, concept_num]
         if mask is not None:
             attn = attn.masked_fill(mask == 0, -1e9)
-        attn = F.dropout(F.softmax(attn, dim=-1), p=self.dropout)
+        attn = F.dropout(F.softmax(attn, dim=0), p=self.dropout)  # pay attention that dim=-1 is not as good as dim=0!
         return attn
 
 
@@ -145,39 +145,43 @@ class MLPEncoder(nn.Module):
                 nn.init.xavier_normal_(m.weight.data)
                 m.bias.data.fill_(0.1)
 
-    def edge2node(self, x, rel_rec, rel_send):
+    def node2edge(self, x, sp_send, sp_rec):
         # NOTE: Assumes that we have the same graph across all samples.
-        incoming = torch.matmul(rel_rec.t(), x)
-        return incoming / incoming.size(1)
-
-    def node2edge(self, x, rel_rec, rel_send):
-        # NOTE: Assumes that we have the same graph across all samples.
-        receivers = torch.matmul(rel_rec, x)
-        senders = torch.matmul(rel_send, x)
+        receivers = torch.matmul(sp_rec, x)
+        senders = torch.matmul(sp_send, x)
         edges = torch.cat([senders, receivers], dim=1)
         return edges
 
-    def forward(self, inputs, rel_rec, rel_send):
+    def edge2node(self, x, sp_send_t, sp_rec_t):
+        # NOTE: Assumes that we have the same graph across all samples.
+        incoming = torch.matmul(sp_rec_t, x)
+        return incoming
+
+    def forward(self, inputs, sp_send, sp_rec, sp_send_t, sp_rec_t):
         r"""
         Parameters:
             inputs: input concept embedding matrix
-            rel_send: one-hot encoded send-node index
-            rel_rec: one-hot encoded receive-node index
+            sp_send: one-hot encoded send-node index(sparse tensor)
+            sp_rec: one-hot encoded receive-node index(sparse tensor)
+            sp_send_t: one-hot encoded send-node index(sparse tensor, transpose)
+            sp_rec_t: one-hot encoded receive-node index(sparse tensor, transpose)
         Shape:
             inputs: [concept_num, embedding_dim]
-            rel_send: [edge_num, concept_num]
-            rel_rec: [edge_num, concept_num]
+            sp_send: [edge_num, concept_num]
+            sp_rec: [edge_num, concept_num]
+            sp_send_t: [concept_num, edge_num]
+            sp_rec_t: [concept_num, edge_num]
         Return:
             output: [edge_num, edge_type_num]
         """
-        x = self.node2edge(inputs, rel_rec, rel_send)  # [edge_num, 2 * embedding_dim]
+        x = self.node2edge(inputs, sp_send, sp_rec)  # [edge_num, 2 * embedding_dim]
         x = self.mlp(x)  # [edge_num, hidden_num]
         x_skip = x
 
         if self.factor:
-            x = self.edge2node(x, rel_rec, rel_send)  # [concept_num, hidden_num]
+            x = self.edge2node(x, sp_send_t, sp_rec_t)  # [concept_num, hidden_num]
             x = self.mlp2(x)  # [concept_num, hidden_num]
-            x = self.node2edge(x, rel_rec, rel_send)  # [edge_num, 2 * hidden_num]
+            x = self.node2edge(x, sp_send, sp_rec)  # [edge_num, 2 * hidden_num]
             x = torch.cat((x, x_skip), dim=1)  # Skip connection  shape: [edge_num, 3 * hidden_num]
             x = self.mlp3(x)  # [edge_num, hidden_num]
         else:
@@ -206,26 +210,38 @@ class MLPDecoder(nn.Module):
         self.out_fc2 = nn.Linear(hidden_dim, hidden_dim, bias=bias)
         self.out_fc3 = nn.Linear(hidden_dim, input_dim, bias=bias)
 
-    def forward(self, inputs, rel_type, rel_rec, rel_send):
+    def node2edge(self, x, sp_send, sp_rec):
+        receivers = torch.matmul(sp_rec, x)  # [edge_num, embedding_dim]
+        senders = torch.matmul(sp_send, x)  # [edge_num, embedding_dim]
+        edges = torch.cat([senders, receivers], dim=-1)  # [edge_num, 2 * embedding_dim]
+        return edges
+
+    def edge2node(self, x, sp_send_t, sp_rec_t):
+        # NOTE: Assumes that we have the same graph across all samples.
+        incoming = torch.matmul(sp_rec_t, x)
+        return incoming
+
+    def forward(self, inputs, rel_type, sp_send, sp_rec, sp_send_t, sp_rec_t):
         r"""
         Parameters:
             inputs: input concept embedding matrix
             rel_type: inferred edge weights for all edge types from MLPEncoder
-            rel_send: one-hot encoded send-node index
-            rel_rec: one-hot encoded receive-node index
+            sp_send: one-hot encoded send-node index(sparse tensor)
+            sp_rec: one-hot encoded receive-node index(sparse tensor)
+            sp_send_t: one-hot encoded send-node index(sparse tensor, transpose)
+            sp_rec_t: one-hot encoded receive-node index(sparse tensor, transpose)
         Shape:
             inputs: [concept_num, embedding_dim]
-            rel_send: [edge_num, concept_num]
-            rel_rec: [edge_num, concept_num]
+            sp_send: [edge_num, concept_num]
+            sp_rec: [edge_num, concept_num]
+            sp_send_t: [concept_num, edge_num]
+            sp_rec_t: [concept_num, edge_num]
         Return:
             output: [edge_num, edge_type_num]
         """
         # NOTE: Assumes that we have the same graph across all samples.
         # Node2edge
-        receivers = torch.matmul(rel_rec, inputs)  # [edge_num, embedding_dim]
-        senders = torch.matmul(rel_send, inputs)  # [edge_num, embedding_dim]
-        pre_msg = torch.cat([senders, receivers], dim=-1)  # [edge_num, 2 * embedding_dim]
-
+        pre_msg = self.node2edge(inputs, sp_send, sp_rec)
         all_msgs = Variable(torch.zeros(pre_msg.size(0), self.msg_out_dim, device=inputs.device))  # [edge_num, msg_out_dim]
         for i in range(self.edge_type_num):
             msg = F.relu(self.msg_fc1[i](pre_msg))
@@ -235,9 +251,7 @@ class MLPDecoder(nn.Module):
             all_msgs += msg
 
         # Aggregate all msgs to receiver
-        agg_msgs = all_msgs.transpose(-2, -1).matmul(rel_rec).transpose(-2, -1)  # [concept_num, msg_out_dim]
-        agg_msgs = agg_msgs.contiguous()
-
+        agg_msgs = self.edge2node(all_msgs, sp_send_t, sp_rec_t)  # [concept_num, msg_out_dim]
         # Output MLP
         pred = F.dropout(F.relu(self.out_fc1(agg_msgs)), p=self.dropout)  # [concept_num, hidden_dim]
         pred = F.dropout(F.relu(self.out_fc2(pred)), p=self.dropout)  # [concept_num, hidden_dim]
