@@ -107,6 +107,7 @@ def load_dataset(file_path, batch_size, graph_type, dkt_graph_path=None, train_r
     test_size = student_num - train_size - val_size
     train_dataset, val_dataset, test_dataset = torch.utils.data.random_split(kt_dataset, [train_size, val_size, test_size])
     print('train_size: ', train_size, 'val_size: ', val_size, 'test_size: ', test_size)
+
     train_data_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=shuffle, collate_fn=pad_collate)
     valid_data_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=shuffle, collate_fn=pad_collate)
     test_data_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=shuffle, collate_fn=pad_collate)
@@ -116,7 +117,7 @@ def load_dataset(file_path, batch_size, graph_type, dkt_graph_path=None, train_r
         if graph_type == 'Dense':
             graph = build_dense_graph(concept_num)
         elif graph_type == 'Transition':
-            graph = build_transition_graph(question_list, seq_len_list, student_num, concept_num)
+            graph = build_transition_graph(question_list, seq_len_list, train_dataset.indices, student_num, concept_num)
         elif graph_type == 'DKT':
             graph = build_dkt_graph(dkt_graph_path, concept_num)
         if use_cuda:
@@ -124,9 +125,12 @@ def load_dataset(file_path, batch_size, graph_type, dkt_graph_path=None, train_r
     return concept_num, graph, train_data_loader, valid_data_loader, test_data_loader
 
 
-def build_transition_graph(question_list, seq_len_list, student_num, concept_num):
+def build_transition_graph(question_list, seq_len_list, indices, student_num, concept_num):
     graph = np.zeros((concept_num, concept_num))
+    student_dict = dict(zip(indices, np.arange(student_num)))
     for i in range(student_num):
+        if i not in student_dict:
+            continue
         questions = question_list[i]
         seq_len = seq_len_list[i]
         for j in range(seq_len - 1):
