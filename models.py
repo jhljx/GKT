@@ -17,13 +17,12 @@ from utils import gumbel_softmax
 
 class GKT(nn.Module):
 
-    def __init__(self, concept_num, hidden_dim, embedding_dim, edge_type_num, graph_type, graph=None, graph_model=None, dropout=0.5, bias=True, binary=False):
+    def __init__(self, concept_num, hidden_dim, embedding_dim, edge_type_num, graph_type, graph=None, graph_model=None, dropout=0.5, bias=True):
         super(GKT, self).__init__()
         self.concept_num = concept_num
         self.hidden_dim = hidden_dim
         self.embedding_dim = embedding_dim
         self.edge_type_num = edge_type_num
-        self.res_len = 2 if binary else 12
 
         assert graph_type in ['Dense', 'Transition', 'DKT', 'PAM', 'MHA', 'VAE']
         self.graph_type = graph_type
@@ -44,11 +43,11 @@ class GKT(nn.Module):
             self.graph_model = graph_model
 
         # one-hot feature and question
-        self.one_hot_feat = torch.eye(self.res_len * self.concept_num)
+        self.one_hot_feat = torch.eye(2 * self.concept_num)
         self.one_hot_q = torch.eye(self.concept_num)
         self.one_hot_q = torch.cat((self.one_hot_q, torch.zeros(1, self.concept_num)), dim=0)
         # concept and concept & response embeddings
-        self.emb_x = nn.Embedding(self.res_len * concept_num, embedding_dim)
+        self.emb_x = nn.Embedding(2 * concept_num, embedding_dim)
         # last embedding is used for padding, so dim + 1
         self.emb_c = nn.Embedding(concept_num + 1, embedding_dim, padding_idx=-1)
 
@@ -58,11 +57,11 @@ class GKT(nn.Module):
         self.f_neighbor_list = nn.ModuleList()
         if graph_type in ['Dense', 'Transition', 'DKT', 'PAM']:
             # f_in and f_out functions
-            self.f_neighbor_list.append(MLP(self.res_len * mlp_input_dim, hidden_dim, hidden_dim, dropout=dropout, bias=bias))
-            self.f_neighbor_list.append(MLP(self.res_len * mlp_input_dim, hidden_dim, hidden_dim, dropout=dropout, bias=bias))
+            self.f_neighbor_list.append(MLP(2 * mlp_input_dim, hidden_dim, hidden_dim, dropout=dropout, bias=bias))
+            self.f_neighbor_list.append(MLP(2 * mlp_input_dim, hidden_dim, hidden_dim, dropout=dropout, bias=bias))
         else:  # ['MHA', 'VAE']
             for i in range(edge_type_num):
-                self.f_neighbor_list.append(MLP(self.res_len * mlp_input_dim, hidden_dim, hidden_dim, dropout=dropout, bias=bias))
+                self.f_neighbor_list.append(MLP(2 * mlp_input_dim, hidden_dim, hidden_dim, dropout=dropout, bias=bias))
 
         # Erase & Add Gate
         self.erase_add_gate = EraseAddGate(hidden_dim, concept_num)
@@ -88,9 +87,9 @@ class GKT(nn.Module):
             tmp_ht: aggregation results of concept hidden knowledge state and concept(& response) embedding
         """
         qt_mask = torch.ne(qt, -1)  # [batch_size], qt != -1
-        x_idx_mat = torch.arange(self.res_len * self.concept_num, device=xt.device)
-        x_embedding = self.emb_x(x_idx_mat)  # [res_len * concept_num, embedding_dim]
-        masked_feat = F.embedding(xt[qt_mask], self.one_hot_feat)  # [mask_num, res_len * concept_num]
+        x_idx_mat = torch.arange(2 * self.concept_num, device=xt.device)
+        x_embedding = self.emb_x(x_idx_mat)  # [2 * concept_num, embedding_dim]
+        masked_feat = F.embedding(xt[qt_mask], self.one_hot_feat)  # [mask_num, 2 * concept_num]
         res_embedding = masked_feat.mm(x_embedding)  # [mask_num, embedding_dim]
         mask_num = res_embedding.shape[0]
 
@@ -256,7 +255,7 @@ class GKT(nn.Module):
         new_col = np.vstack((col_arr, row_arr))  # [2 * mask_num, concept_num]
         row_arr = new_row.flatten()  # [2 * mask_num * concept_num, ]
         col_arr = new_col.flatten()  # [2 * mask_num * concept_num, ]
-        data_arr = np.ones(self.res_len * mask_num * self.concept_num)
+        data_arr = np.ones(2 * mask_num * self.concept_num)
         init_graph = sp.coo_matrix((data_arr, (row_arr, col_arr)), shape=(self.concept_num, self.concept_num))
         init_graph.setdiag(0)  # remove self-loop edges
         row_arr, col_arr, _ = sp.find(init_graph)

@@ -40,7 +40,6 @@ parser.add_argument('--edge-types', type=int, default=2, help='The number of edg
 parser.add_argument('--graph-type', type=str, default='Dense', help='The type of latent concept graph.')
 parser.add_argument('--dropout', type=float, default=0, help='Dropout rate (1 - keep probability).')
 parser.add_argument('--bias', type=bool, default=True, help='Whether to add bias for neural network layers.')
-parser.add_argument('--binary', type=bool, default=False, help='Whether only use 0/1 for results.')
 parser.add_argument('--temp', type=float, default=0.5, help='Temperature for Gumbel softmax.')
 parser.add_argument('--hard', action='store_true', default=False, help='Uses discrete samples in training forward pass.')
 parser.add_argument('--no-factor', action='store_true', default=False, help='Disables factor graph model.')
@@ -54,9 +53,6 @@ parser.add_argument('--shuffle', type=bool, default=True, help='Whether to shuff
 parser.add_argument('--lr', type=float, default=0.001, help='Initial learning rate.')
 parser.add_argument('--lr-decay', type=int, default=200, help='After how epochs to decay LR by a factor of gamma.')
 parser.add_argument('--gamma', type=float, default=0.5, help='LR decay factor.')
-parser.add_argument('--test', type=bool, default=False, help='Whether to test for existed model.')
-parser.add_argument('--test-model-dir', type=str, default='logs/expDKT', help='Existed model file dir.')
-
 
 
 args = parser.parse_args()
@@ -73,8 +69,6 @@ if args.cuda:
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = True
 
-res_len = 2 if args.binary else 12
-
 # Save model and meta-data. Always saves in a new sub-folder.
 log = None
 save_dir = args.save_dir
@@ -89,13 +83,9 @@ if args.save_dir:
         model_file_name = 'GKT' + '-' + args.graph_type
     else:
         raise NotImplementedError(args.model + ' model is not implemented!')
-
-    if args.test is True:
-        save_dir = args.test_model_dir
-    else:
-        save_dir = '{}/exp{}/'.format(args.save_dir, model_file_name + timestamp)
-        if not os.path.exists(save_dir):
-            os.makedirs(save_dir)
+    save_dir = '{}/exp{}/'.format(args.save_dir, model_file_name + timestamp)
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
     meta_file = os.path.join(save_dir, 'metadata.pkl')
     model_file = os.path.join(save_dir, model_file_name + '.pt')
     optimizer_file = os.path.join(save_dir, model_file_name + '-Optimizer.pt')
@@ -131,7 +121,7 @@ if args.model == 'GKT':
     model = GKT(concept_num, args.hid_dim, args.emb_dim, args.edge_types, args.graph_type, graph=graph, graph_model=graph_model,
                 dropout=args.dropout, bias=args.bias)
 elif args.model == 'DKT':
-    model = DKT(res_len * concept_num, args.emb_dim, concept_num, dropout=args.dropout, bias=args.bias)
+    model = DKT(2 * concept_num, args.emb_dim, concept_num, dropout=args.dropout, bias=args.bias)
 else:
     raise NotImplementedError(args.model + ' model is not implemented!')
 kt_loss = KTLoss()
@@ -393,22 +383,21 @@ def test():
     if args.cuda:
         torch.cuda.empty_cache()
 
-if args.test is False:
-    # Train model
-    print('start training!')
-    t_total = time.time()
-    best_val_loss = np.inf
-    best_epoch = 0
-    for epoch in range(args.epochs):
-        val_loss = train(epoch, best_val_loss)
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
-            best_epoch = epoch
-    print("Optimization Finished!")
-    print("Best Epoch: {:04d}".format(best_epoch))
-    if args.save_dir:
-        print("Best Epoch: {:04d}".format(best_epoch), file=log)
-        log.flush()
+# Train model
+print('start training!')
+t_total = time.time()
+best_val_loss = np.inf
+best_epoch = 0
+for epoch in range(args.epochs):
+    val_loss = train(epoch, best_val_loss)
+    if val_loss < best_val_loss:
+        best_val_loss = val_loss
+        best_epoch = epoch
+print("Optimization Finished!")
+print("Best Epoch: {:04d}".format(best_epoch))
+if args.save_dir:
+    print("Best Epoch: {:04d}".format(best_epoch), file=log)
+    log.flush()
 
 test()
 if log is not None:
