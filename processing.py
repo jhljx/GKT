@@ -38,7 +38,7 @@ def pad_collate(batch):
     return feature_pad, question_pad, answer_pad
 
 
-def load_dataset(file_path, batch_size, graph_type, dkt_graph_path=None, train_ratio=0.7, val_ratio=0.2, shuffle=True, model_type='GKT', use_cuda=True):
+def load_dataset(file_path, batch_size, graph_type, dkt_graph_path=None, train_ratio=0.7, val_ratio=0.2, shuffle=True, model_type='GKT', use_binary=False, use_cuda=True):
     r"""
     Parameters:
         file_path: input file path of knowledge tracing data
@@ -62,8 +62,8 @@ def load_dataset(file_path, batch_size, graph_type, dkt_graph_path=None, train_r
     if "user_id" not in df.columns:
         raise KeyError(f"The column 'user_id' was not found on {file_path}")
 
-    if not (df['correct'].isin([0, 1])).all():
-        raise KeyError(f"The values of the column 'correct' must be 0 or 1.")
+    # if not (df['correct'].isin([0, 1])).all():
+    #     raise KeyError(f"The values of the column 'correct' must be 0 or 1.")
 
     # Step 1.1 - Remove questions without skill
     df.dropna(subset=['skill_id'], inplace=True)
@@ -75,7 +75,11 @@ def load_dataset(file_path, batch_size, graph_type, dkt_graph_path=None, train_r
     df['skill'], _ = pd.factorize(df['skill_id'], sort=True)  # we can also use problem_id to represent exercises
 
     # Step 3 - Cross skill id with answer to form a synthetic feature
-    df['skill_with_answer'] = df['skill'] * 2 + df['correct']
+    if use_binary:
+        df['skill_with_answer'] = df['skill'] * 2 + df['correct']
+    else:
+        df['skill_with_answer'] = df['skill'] * 12 + df['correct'] - 1
+
 
     # Step 4 - Convert to a sequence per user id and shift features 1 timestep
     feature_list = []
@@ -86,7 +90,7 @@ def load_dataset(file_path, batch_size, graph_type, dkt_graph_path=None, train_r
     def get_data(series):
         feature_list.append(series['skill_with_answer'].tolist())
         question_list.append(series['skill'].tolist())
-        answer_list.append(series['correct'].tolist())
+        answer_list.append(series['correct'].eq(1).astype('int').tolist())
         seq_len_list.append(series['correct'].shape[0])
 
     df.groupby('user_id').apply(get_data)
@@ -99,7 +103,9 @@ def load_dataset(file_path, batch_size, graph_type, dkt_graph_path=None, train_r
     question_dim = int(df['skill'].max() + 1)
     print('question_dim: ', question_dim)
     concept_num = question_dim
-    assert feature_dim == 2 * question_dim
+    # 记一下结果有几个，是2个（0或1）还是12个（1,2,3,4,5,6,7,8,9,10,11,12）
+    reslen = 2 if use_binary else 12
+    assert feature_dim == reslen * question_dim
 
     kt_dataset = KTDataset(feature_list, question_list, answer_list)
     train_size = int(train_ratio * student_num)
