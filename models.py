@@ -58,11 +58,11 @@ class GKT(nn.Module):
         self.f_neighbor_list = nn.ModuleList()
         if graph_type in ['Dense', 'Transition', 'DKT', 'PAM']:
             # f_in and f_out functions
-            self.f_neighbor_list.append(MLP(self.res_len * mlp_input_dim, hidden_dim, hidden_dim, dropout=dropout, bias=bias))
-            self.f_neighbor_list.append(MLP(self.res_len * mlp_input_dim, hidden_dim, hidden_dim, dropout=dropout, bias=bias))
+            self.f_neighbor_list.append(MLP(2 * mlp_input_dim, hidden_dim, hidden_dim, dropout=dropout, bias=bias))
+            self.f_neighbor_list.append(MLP(2 * mlp_input_dim, hidden_dim, hidden_dim, dropout=dropout, bias=bias))
         else:  # ['MHA', 'VAE']
             for i in range(edge_type_num):
-                self.f_neighbor_list.append(MLP(self.res_len * mlp_input_dim, hidden_dim, hidden_dim, dropout=dropout, bias=bias))
+                self.f_neighbor_list.append(MLP(2 * mlp_input_dim, hidden_dim, hidden_dim, dropout=dropout, bias=bias))
 
         # Erase & Add Gate
         self.erase_add_gate = EraseAddGate(hidden_dim, concept_num)
@@ -256,7 +256,7 @@ class GKT(nn.Module):
         new_col = np.vstack((col_arr, row_arr))  # [2 * mask_num, concept_num]
         row_arr = new_row.flatten()  # [2 * mask_num * concept_num, ]
         col_arr = new_col.flatten()  # [2 * mask_num * concept_num, ]
-        data_arr = np.ones(self.res_len * mask_num * self.concept_num)
+        data_arr = np.ones(2 * mask_num * self.concept_num)
         init_graph = sp.coo_matrix((data_arr, (row_arr, col_arr)), shape=(self.concept_num, self.concept_num))
         init_graph.setdiag(0)  # remove self-loop edges
         row_arr, col_arr, _ = sp.find(init_graph)
