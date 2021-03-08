@@ -17,13 +17,13 @@ from utils import gumbel_softmax
 
 class GKT(nn.Module):
 
-    def __init__(self, concept_num, hidden_dim, embedding_dim, edge_type_num, graph_type, graph=None, graph_model=None, dropout=0.5, bias=True, binary=False):
+    def __init__(self, concept_num, hidden_dim, embedding_dim, edge_type_num, graph_type, graph=None, graph_model=None, dropout=0.5, bias=True, res_len=2):
         super(GKT, self).__init__()
         self.concept_num = concept_num
         self.hidden_dim = hidden_dim
         self.embedding_dim = embedding_dim
         self.edge_type_num = edge_type_num
-        self.res_len = 2 if binary else 12
+        self.res_len = res_len
 
         assert graph_type in ['Dense', 'Transition', 'DKT', 'PAM', 'MHA', 'VAE']
         self.graph_type = graph_type
