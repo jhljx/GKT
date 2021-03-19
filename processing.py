@@ -38,7 +38,7 @@ def pad_collate(batch):
     return feature_pad, question_pad, answer_pad
 
 
-def load_dataset(file_path, batch_size, graph_type, dkt_graph_path=None, train_ratio=0.7, val_ratio=0.2, shuffle=True, model_type='GKT', use_binary=False, use_cuda=True):
+def load_dataset(file_path, batch_size, graph_type, dkt_graph_path=None, train_ratio=0.7, val_ratio=0.2, shuffle=True, model_type='GKT', use_binary=True, res_len=2, use_cuda=True):
     r"""
     Parameters:
         file_path: input file path of knowledge tracing data
@@ -75,10 +75,11 @@ def load_dataset(file_path, batch_size, graph_type, dkt_graph_path=None, train_r
     df['skill'], _ = pd.factorize(df['skill_id'], sort=True)  # we can also use problem_id to represent exercises
 
     # Step 3 - Cross skill id with answer to form a synthetic feature
+    # use_binary: (0,1); !use_binary: (1,2,3,4,5,6,7,8,9,10,11,12). Either way, the correct result index is guaranteed to be 1
     if use_binary:
         df['skill_with_answer'] = df['skill'] * 2 + df['correct']
     else:
-        df['skill_with_answer'] = df['skill'] * 12 + df['correct'] - 1
+        df['skill_with_answer'] = df['skill'] * res_len + df['correct'] - 1
 
 
     # Step 4 - Convert to a sequence per user id and shift features 1 timestep
@@ -103,9 +104,9 @@ def load_dataset(file_path, batch_size, graph_type, dkt_graph_path=None, train_r
     question_dim = int(df['skill'].max() + 1)
     print('question_dim: ', question_dim)
     concept_num = question_dim
-    # 记一下结果有几个，是2个（0或1）还是12个（1,2,3,4,5,6,7,8,9,10,11,12）
-    reslen = 2 if use_binary else 12
-    assert feature_dim == reslen * question_dim
+
+    # print('feature_dim:', feature_dim, 'res_len*question_dim:', res_len*question_dim)
+    # assert feature_dim == res_len * question_dim
 
     kt_dataset = KTDataset(feature_list, question_list, answer_list)
     train_size = int(train_ratio * student_num)

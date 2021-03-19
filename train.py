@@ -40,7 +40,8 @@ parser.add_argument('--edge-types', type=int, default=2, help='The number of edg
 parser.add_argument('--graph-type', type=str, default='Dense', help='The type of latent concept graph.')
 parser.add_argument('--dropout', type=float, default=0, help='Dropout rate (1 - keep probability).')
 parser.add_argument('--bias', type=bool, default=True, help='Whether to add bias for neural network layers.')
-parser.add_argument('--binary', type=bool, default=False, help='Whether only use 0/1 for results.')
+parser.add_argument('--binary', type=bool, default=True, help='Whether only use 0/1 for results.')
+parser.add_argument('--result-type', type=int, default=12, help='Number of results types when multiple results are used.')
 parser.add_argument('--temp', type=float, default=0.5, help='Temperature for Gumbel softmax.')
 parser.add_argument('--hard', action='store_true', default=False, help='Uses discrete samples in training forward pass.')
 parser.add_argument('--no-factor', action='store_true', default=False, help='Disables factor graph model.')
@@ -73,7 +74,7 @@ if args.cuda:
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = True
 
-res_len = 2 if args.binary else 12
+res_len = 2 if args.binary else args.result_type
 
 # Save model and meta-data. Always saves in a new sub-folder.
 log = None

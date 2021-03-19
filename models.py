@@ -23,6 +23,7 @@ class GKT(nn.Module):
         self.hidden_dim = hidden_dim
         self.embedding_dim = embedding_dim
         self.edge_type_num = edge_type_num
+
         self.res_len = 2 if binary else 12
         self.has_cuda = has_cuda
 
