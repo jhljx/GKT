@@ -126,7 +126,7 @@ def load_dataset(file_path, batch_size, graph_type, dkt_graph_path=None, train_r
             graph = build_transition_graph(question_list, seq_len_list, train_dataset.indices, student_num, concept_num)
         elif graph_type == 'DKT':
             graph = build_dkt_graph(dkt_graph_path, concept_num)
-        if use_cuda:
+        if use_cuda and graph_type in ['Dense', 'Transition', 'DKT']:
             graph = graph.cuda()
     return concept_num, graph, train_data_loader, valid_data_loader, test_data_loader
 

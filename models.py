@@ -17,13 +17,14 @@ from utils import gumbel_softmax
 
 class GKT(nn.Module):
 
-    def __init__(self, concept_num, hidden_dim, embedding_dim, edge_type_num, graph_type, graph=None, graph_model=None, dropout=0.5, bias=True, binary=False):
+    def __init__(self, concept_num, hidden_dim, embedding_dim, edge_type_num, graph_type, graph=None, graph_model=None, dropout=0.5, bias=True, binary=False, has_cuda=False):
         super(GKT, self).__init__()
         self.concept_num = concept_num
         self.hidden_dim = hidden_dim
         self.embedding_dim = embedding_dim
         self.edge_type_num = edge_type_num
         self.res_len = 2 if binary else 12
+        self.has_cuda = has_cuda
 
         assert graph_type in ['Dense', 'Transition', 'DKT', 'PAM', 'MHA', 'VAE']
         self.graph_type = graph_type
@@ -44,9 +45,11 @@ class GKT(nn.Module):
             self.graph_model = graph_model
 
         # one-hot feature and question
-        self.one_hot_feat = torch.eye(self.res_len * self.concept_num)
-        self.one_hot_q = torch.eye(self.concept_num)
-        self.one_hot_q = torch.cat((self.one_hot_q, torch.zeros(1, self.concept_num)), dim=0)
+        one_hot_feat = torch.eye(self.res_len * self.concept_num)
+        self.one_hot_feat = one_hot_feat.cuda() if self.has_cuda else one_hot_feat
+        self.one_hot_q = torch.eye(self.concept_num, device=self.one_hot_feat.device)
+        zero_padding = torch.zeros(1, self.concept_num, device=self.one_hot_feat.device)
+        self.one_hot_q = torch.cat((self.one_hot_q, zero_padding), dim=0)
         # concept and concept & response embeddings
         self.emb_x = nn.Embedding(self.res_len * concept_num, embedding_dim)
         # last embedding is used for padding, so dim + 1
@@ -342,7 +345,7 @@ class MultiHeadAttention(nn.Module):
         Return:
             graphs: n_head types of inferred graphs
         """
-        graphs = Variable(torch.zeros(self.n_head, self.concept_num, self.concept_num))
+        graphs = Variable(torch.zeros(self.n_head, self.concept_num, self.concept_num, device=qt.device))
         for k in range(self.n_head):
             index_tuple = (qt.long(), )
             graphs[k] = graphs[k].index_put(index_tuple, attn_score[k])  # used for calculation
@@ -410,7 +413,7 @@ class VAE(nn.Module):
         """
         x_index = sp_send._indices()[1].long()  # send node index: [edge_num, ]
         y_index = sp_rec._indices()[1].long()   # receive node index [edge_num, ]
-        graphs = Variable(torch.zeros(self.edge_type_num, self.concept_num, self.concept_num))
+        graphs = Variable(torch.zeros(self.edge_type_num, self.concept_num, self.concept_num, device=edges.device))
         for k in range(self.edge_type_num):
             index_tuple = (x_index, y_index)
             graphs[k] = graphs[k].index_put(index_tuple, edges[:, k])  # used for calculation
@@ -481,7 +484,7 @@ class DKT(nn.Module):
             pred: predicted correct probability of the question answered at the next timestamp
         """
         one_hot = torch.eye(self.output_dim, device=yt.device)
-        one_hot = torch.cat((one_hot, torch.zeros(1, self.output_dim)), dim=0)
+        one_hot = torch.cat((one_hot, torch.zeros(1, self.output_dim, device=yt.device)), dim=0)
         next_qt = questions[:, 1:]
         next_qt = torch.where(next_qt != -1, next_qt, self.output_dim * torch.ones_like(next_qt, device=yt.device))  # [batch_size, seq_len - 1]
         one_hot_qt = F.embedding(next_qt, one_hot)  # [batch_size, seq_len - 1, output_dim]
@@ -505,8 +508,8 @@ class DKT(nn.Module):
             rec_embedding: reconstructed input of VAE (optional)
             z_prob: probability distribution of latent variable z in VAE (optional)
         """
-        feat_one_hot = torch.eye(self.feature_dim)
-        feat_one_hot = torch.cat((feat_one_hot, torch.zeros(1, self.feature_dim)), dim=0)
+        feat_one_hot = torch.eye(self.feature_dim, device=features.device)
+        feat_one_hot = torch.cat((feat_one_hot, torch.zeros(1, self.feature_dim, device=features.device)), dim=0)
         feat = torch.where(features != -1, features, self.feature_dim * torch.ones_like(features, device=features.device))
         features = F.embedding(feat, feat_one_hot)
 

@@ -122,10 +122,10 @@ if args.model == 'GKT':
         vae_loss = VAELoss(concept_num, edge_type_num=args.edge_types, prior=args.prior, var=args.var)
         if args.cuda:
             vae_loss = vae_loss.cuda()
-    if args.cuda:
+    if args.cuda and args.graph_type in ['MHA', 'VAE']:
         graph_model = graph_model.cuda()
     model = GKT(concept_num, args.hid_dim, args.emb_dim, args.edge_types, args.graph_type, graph=graph, graph_model=graph_model,
-                dropout=args.dropout, bias=args.bias)
+                dropout=args.dropout, bias=args.bias, has_cuda=args.cuda)
 elif args.model == 'DKT':
     model = DKT(res_len * concept_num, args.emb_dim, concept_num, dropout=args.dropout, bias=args.bias)
 else:
